@@ -162,6 +162,9 @@ button.speak { border: 0; background: none; cursor: pointer; color: var(--muted)
 button.speak:hover { color: var(--accent); background: var(--accent-soft); }
 button.speak.speaking { color: var(--accent); background: var(--accent-soft); animation: pulse 1s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .55; } }
+.speak-pair { display: inline-flex; align-items: center; gap: 1px; vertical-align: middle; }
+button.speak.slow span { font-size: .72rem; font-weight: 600; letter-spacing: .02em; }
+.sel-btn .speak-pair { gap: 6px; }
 button.speak.btn { border: 1px solid var(--border); background: var(--surface); color: var(--text); padding: 6px 11px; }
 button.speak.btn:hover { background: var(--surface-2); }
 .surface button.speak, .k button.speak { margin-left: 2px; text-transform: none; letter-spacing: 0; font-weight: 400; }
@@ -681,7 +684,11 @@ function stopPiper() {
   piperBtn?.classList.remove("speaking"); piperBtn = null;
   scheduleIdle();
 }
-async function speakPiper(text, lang, btn, voice = null) {
+// Normal and slow speeds (per device). Slow defaults to 65%, about where
+// Duolingo's slow playback sits: clearly slower, still natural.
+const speechRate = (slow) => Number(slow ? pref.get("tts.slow", "0.65") : pref.get("tts.rate", "0.9"));
+
+async function speakPiper(text, lang, btn, voice = null, slow = false) {
   const again = piperBtn && piperBtn === btn;
   stopPiper();
   if (canTTS && (speechSynthesis.speaking || speechSynthesis.pending)) speechSynthesis.cancel();
@@ -690,7 +697,7 @@ async function speakPiper(text, lang, btn, voice = null) {
   if (!ctx) { toast("This browser can't play audio.", "error"); return; }
   piperBtn = btn || null;
   btn?.classList.add("speaking");
-  const speed = Number(pref.get("tts.rate", "0.9"));
+  const speed = speechRate(slow);
   const key = [text, lang, speed, voice || TTS.voices[lang]].join("|");
   try {
     let buffer = piperCache.get(key);
@@ -723,8 +730,8 @@ async function speakPiper(text, lang, btn, voice = null) {
   }
 }
 
-function speak(text, lang, btn) {
-  if (TTS.engine === "piper" && TTS.voices[lang]) return speakPiper(text, lang, btn);
+function speak(text, lang, btn, slow = false) {
+  if (TTS.engine === "piper" && TTS.voices[lang]) return speakPiper(text, lang, btn, null, slow);
   stopPiper();
   if (!canTTS) { toast("This browser can't read text aloud.", "error"); return; }
   if (speakingBtn && speakingBtn === btn && speechSynthesis.speaking) { speechSynthesis.cancel(); return; } // press again to stop
@@ -738,7 +745,7 @@ function speak(text, lang, btn) {
   const u = new SpeechSynthesisUtterance(stripStress(text));
   u.lang = voice?.lang || SPEECH_LOCALE[lang] || lang;
   if (voice) u.voice = voice;
-  u.rate = Number(pref.get("tts.rate", "0.9"));
+  u.rate = speechRate(slow);
   document.querySelectorAll(".speak.speaking").forEach((x) => x.classList.remove("speaking"));
   speakingBtn = btn || null;
   btn?.classList.add("speaking");
@@ -748,15 +755,22 @@ function speak(text, lang, btn) {
 }
 const BOOKMARK_SVG = '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" d="M5.5 3h9v14l-4.5-3.5L5.5 17z"/></svg>';
 const BOOKMARK_ON_SVG = '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" d="M5.5 3h9v14l-4.5-3.5L5.5 17z"/></svg>';
+const SLOW_SVG = '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M3 7.5h3l4-3.5v12l-4-3.5H3z"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M13 8.2a2.6 2.6 0 0 1 0 3.6"/></svg>';
 const SPEAKER_SVG = '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M3 7.5h3l4-3.5v12l-4-3.5H3z"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M13 7.2a4 4 0 0 1 0 5.6M15.3 5a7 7 0 0 1 0 10"/></svg>';
 // A speaker button; getText is called on click so it always reads the current text.
-function speakButton(getText, lang, { label = "", cls = "" } = {}) {
+// A speaker button, followed by a "Slow" button unless slow is false.
+function speakButton(getText, lang, { label = "", cls = "", slow = true } = {}) {
   if (!canTTS && TTS.engine !== "piper") return null;
-  const b = el("button", { type: "button", class: `speak ${cls}`.trim(), title: label || "Listen", "aria-label": label || "Listen" });
-  b.innerHTML = SPEAKER_SVG + (label && cls.includes("btn") ? `<span>${label}</span>` : "");
-  b.addEventListener("mousedown", (e) => e.preventDefault()); // keep any text selection
-  b.addEventListener("click", (e) => { e.stopPropagation(); speak(getText(), lang, b); });
-  return b;
+  const make = (isSlow) => {
+    const title = isSlow ? `${label || "Listen"} slowly` : label || "Listen";
+    const b = el("button", { type: "button", class: `speak${isSlow ? " slow" : ""} ${cls}`.trim(), title, "aria-label": title });
+    b.innerHTML = isSlow ? `${SLOW_SVG}<span>Slow</span>` : SPEAKER_SVG + (label && cls.includes("btn") ? `<span>${label}</span>` : "");
+    b.addEventListener("mousedown", (e) => e.preventDefault()); // keep any text selection
+    b.addEventListener("click", (e) => { e.stopPropagation(); speak(getText(), lang, b, isSlow); });
+    return b;
+  };
+  if (!slow) return make(false);
+  return el("span", { class: "speak-pair" }, make(false), make(true));
 }
 
 // ------------------------------------------------------------------ chat
@@ -810,7 +824,7 @@ function chatBox(kind, refId, { textId = null, lang = "" } = {}) {
     return el("div", { class: `bubble ${m.role}` },
       m.role === "assistant" ? renderMarkdown(m.content) : el("div", {}, m.content),
       m.role === "assistant" && m.model ? el("div", { class: "bubble-meta" }, modelLabel(m.model),
-        lang ? speakButton(() => m.content.replace(/[*_`#>-]/g, " "), lang) : null) : null);
+        lang ? speakButton(() => m.content.replace(/[*_`#>-]/g, " "), lang, { slow: false }) : null) : null);
   }
   function draw(messages) {
     count = messages.filter((m) => m.role === "user").length;
@@ -1952,17 +1966,20 @@ async function viewSettings() {
       const select = el("select", { "aria-label": `${LANGS[code]} voice`, onchange: (e) => pref.set("tts.voice." + code, e.target.value) },
         list.map((v) => el("option", { value: v.voiceURI, selected: v === current }, `${v.name}${v.localService ? "" : " (online)"}`)));
       return el("div", { class: "voice-row" }, el("b", {}, LANGS[code]),
-        el("div", { class: "add-lang" }, select, speakButton(() => sampleFor(code), code, { label: "Test", cls: "btn" })));
+        el("div", { class: "add-lang" }, select, speakButton(() => sampleFor(code), code, { label: "Test", cls: "btn", slow: false })));
     }).concat(el("p", { class: "muted small", style: "margin:8px 0 0" },
       "These voices come from this device, so the choice is saved in this browser only. To add one: on macOS, System Settings → Accessibility → Spoken Content → System voice → Manage voices; on iPhone, Settings → Accessibility → Spoken Content → Voices; on Windows, Settings → Time & language → Speech."));
   }
   function drawSpeech() {
     const piper = TTS.engine === "piper";
-    const rate = el("input", { type: "range", min: "0.5", max: "1.3", step: "0.05", value: pref.get("tts.rate", "0.9"), "aria-label": "Speaking speed" });
-    const rateLabel = el("span", { class: "muted small" });
-    const showRate = () => { rateLabel.textContent = `${Math.round(Number(rate.value) * 100)}%`; };
-    rate.addEventListener("input", () => { pref.set("tts.rate", rate.value); showRate(); });
-    showRate();
+    const slider = (key, dflt, min, max, label) => {
+      const input = el("input", { type: "range", min, max, step: "0.05", value: pref.get(key, dflt), "aria-label": label });
+      const out = el("span", { class: "muted small" });
+      const show = () => { out.textContent = `${Math.round(Number(input.value) * 100)}%`; };
+      input.addEventListener("input", () => { pref.set(key, input.value); show(); });
+      show();
+      return el("div", { class: "voice-row" }, el("b", {}, `${label} `), out, input);
+    };
     speechBox.replaceChildren(
       el("div", { class: "radio-row" },
         el("label", {}, el("input", { type: "radio", name: "tts-engine", checked: !piper, onchange: () => setEngine("browser") }), "This device's voices"),
@@ -1972,7 +1989,9 @@ async function viewSettings() {
         ? "Natural-sounding neural voices generated on your server, the same on every device. Each voice is a one-time download of about 60 MB; audio is cached."
         : "Free and instant, but quality depends on the device. Piper sounds more natural."),
       ...(piper ? piperRows() : browserRows()),
-      el("div", { class: "voice-row" }, el("b", {}, "Speed "), rateLabel, rate));
+      slider("tts.rate", "0.9", "0.5", "1.3", "Speed"),
+      slider("tts.slow", "0.65", "0.4", "0.9", "Slow speed"),
+      el("p", { class: "muted small", style: "margin:0" }, "“Slow” buttons play at the slow speed; 65% is close to Duolingo's slow playback."));
   }
   drawSpeech();
   if (TTS.engine === "piper") loadPiper();
