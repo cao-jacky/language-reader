@@ -117,12 +117,16 @@ div.field { margin-bottom: 14px; }
 .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 10px 14px; min-width: 180px; }
 .stat .n { font-size: 1.3rem; font-weight: 650; }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
-.text-card { display: block; text-decoration: none; color: inherit; background: var(--surface); border: 1px solid var(--border);
+.text-card { display: flex; flex-direction: column; align-items: flex-start; text-decoration: none; color: inherit;
+  background: var(--surface); border: 1px solid var(--border);
   border-radius: 10px; padding: 14px 16px; transition: border-color .15s, box-shadow .15s; }
 .text-card:hover { border-color: var(--accent); box-shadow: var(--shadow); }
-.text-card h3 { margin: 8px 0 6px; font: 600 1.05rem var(--serif); }
+.text-card h3 { margin: 8px 0 6px; font: 600 1.05rem/1.35 var(--serif); display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical; overflow: hidden; }
 .text-card .preview { color: var(--muted); font-family: var(--serif); font-size: .92rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.text-card .meta { margin-top: 10px; color: var(--muted); font-size: .8rem; }
+.text-card .meta { margin-top: auto; padding-top: 10px; align-self: stretch; border-top: 1px solid var(--border);
+  color: var(--muted); font-size: .8rem; }
+.text-card .preview { margin-bottom: 10px; }
 .empty { text-align: center; padding: 56px 16px; border: 1px dashed var(--border); border-radius: 12px; color: var(--muted); }
 .empty p { margin: 0 0 14px; }
 
@@ -435,6 +439,8 @@ async function api(path, opts = {}) {
   return data;
 }
 
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
 function fmtDate(s) {
   if (!s) return "";
   const d = new Date(s.replace(" ", "T") + "Z");
@@ -502,7 +508,7 @@ async function viewLibrary() {
     strip.append(el("div", { class: "stat" },
       el("div", { class: "muted small" }, langName(k)),
       el("div", { class: "n" }, s.total, el("span", { class: "muted small" }, " words")),
-      el("div", { class: "muted small" }, `${s.texts || 0} texts · ${s.phrases || 0} phrases · ${s.by_status.known || 0} known`)));
+      el("div", { class: "muted small" }, `${plural(s.texts || 0, "text")} · ${plural(s.phrases || 0, "phrase")} · ${s.by_status.known || 0} known`)));
   }
   function draw() {
     const shown = lang ? texts.filter((t) => t.lang === lang) : texts;
@@ -518,7 +524,7 @@ async function viewLibrary() {
         el("h3", { lang: t.lang }, t.title),
         el("div", { class: "preview", lang: t.lang }, t.preview),
         el("div", { class: "meta" },
-          [fmtDate(t.created_at), `${t.words} words looked up`, t.phrases ? `${t.phrases} phrases` : null,
+          [fmtDate(t.created_at), `${plural(t.words, "word")} looked up`, t.phrases ? plural(t.phrases, "phrase") : null,
            t.translated ? (t.translated === t.sentences ? "translated" : `${t.translated}/${t.sentences} translated`) : null]
             .filter(Boolean).join(" · "))))));
   }
