@@ -24,7 +24,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
-from . import analysis, db, languages, llm, morph, settings, textproc, usage
+from . import analysis, db, languages, llm, morph, settings, textproc, tts, usage
 
 AUTH_TOKEN = os.environ.get("AUTH_TOKEN", "").strip()
 TEMPLATE = Path(__file__).resolve().parent / "templates" / "index.html"
@@ -676,6 +676,90 @@ def get_usage() -> dict:
 def reset_usage() -> dict:
     usage.reset()
     return {"ok": True}
+
+
+# --------------------------------------------------------------------------- #
+# speech (Piper)
+# --------------------------------------------------------------------------- #
+
+
+def _tts(fn, *args):
+    try:
+        return fn(*args)
+    except tts.TTSError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/tts/config")
+def tts_config() -> dict:
+    s = settings.load()
+    selected = settings.tts_voices(s)
+    have = set(tts.installed())
+    return {
+        "engine": s["tts_engine"] if tts.available() else "browser",
+        "piper_available": tts.available(),
+        "voices": {lang: key for lang, key in selected.items() if key in have},
+    }
+
+
+@app.get("/api/tts/voices")
+def tts_voices() -> dict:
+    """Piper voices for each configured language, with download progress."""
+    if not tts.available():
+        return {"piper_available": False}
+    s = settings.load()
+    try:
+        tts.catalogue()
+        catalogue_error = None
+    except tts.TTSError as e:
+        catalogue_error = str(e)
+    return {
+        "piper_available": True,
+        "catalogue_error": catalogue_error,
+        "languages": {lang: tts.voices_for(lang) for lang in settings.configured_languages()},
+        "selected": settings.tts_voices(s),
+        "downloads": tts.download_status(),
+        "cache_bytes": tts.cache_size(),
+    }
+
+
+@app.post("/api/tts/voices/{key}")
+def tts_download(key: str) -> dict:
+    _tts(tts.start_download, key)
+    return {"downloads": tts.download_status()}
+
+
+@app.delete("/api/tts/voices/{key}")
+def tts_remove(key: str) -> dict:
+    _tts(tts.remove, key)
+    s = settings.load()
+    sel = {lang: k for lang, k in settings.tts_voices(s).items() if k != key}
+    settings.save({"tts_voices": json.dumps(sel)})
+    return {"ok": True}
+
+
+@app.delete("/api/tts/cache")
+def tts_clear_cache() -> dict:
+    tts.clear_cache()
+    return {"ok": True}
+
+
+class SpeakReq(BaseModel):
+    text: str = Field(min_length=1, max_length=tts.MAX_TEXT * 2)
+    lang: str
+    speed: float = 1.0
+    voice: str | None = None  # defaults to the voice chosen for the language
+
+
+@app.post("/api/tts/speak")
+def tts_speak(req: SpeakReq) -> Response:
+    if not tts.available():
+        raise HTTPException(400, "Piper isn't installed on the server")
+    key = req.voice or settings.tts_voices().get(req.lang)
+    if not key:
+        raise HTTPException(404, f"No Piper voice chosen for {languages.name(req.lang)}. Pick one in Settings → Speech.")
+    audio = _tts(tts.synthesize, textproc.strip_stress(req.text), key, req.speed)
+    return Response(audio, media_type="audio/wav", headers={"Cache-Control": "private, max-age=86400"})
 
 
 # --------------------------------------------------------------------------- #

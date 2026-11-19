@@ -6,6 +6,7 @@ browser, only whether one is set and its last four characters.
 """
 from __future__ import annotations
 
+import json
 import os
 
 from . import db, languages, usage
@@ -30,6 +31,10 @@ DEFAULTS = {
     "deepl_api_key": "",
     "target_language": "English",
     "languages": languages.DEFAULT,
+    # Speech: "browser" (the device's voices) or "piper" (server-side), and
+    # the Piper voice chosen per language, JSON {lang: voice_key}.
+    "tts_engine": "browser",
+    "tts_voices": "{}",
 }
 
 ENV = {
@@ -121,6 +126,16 @@ def save(values: dict, clear: list[str] | None = None) -> None:
             clean["llm_prices"] = usage.validate_prices(clean["llm_prices"])
         except ValueError as e:
             errors.append(str(e))
+    if "tts_engine" in clean and clean["tts_engine"] not in ("browser", "piper"):
+        errors.append("tts_engine must be browser or piper")
+    if "tts_voices" in clean:
+        try:
+            v = json.loads(clean["tts_voices"] or "{}")
+            if not isinstance(v, dict) or not all(isinstance(x, str) for x in v.values()):
+                raise ValueError
+            clean["tts_voices"] = json.dumps(v, sort_keys=True)
+        except ValueError:
+            errors.append("tts_voices must be a JSON object of language -> voice")
     if "languages" in clean:
         try:
             clean["languages"] = languages.validate(clean["languages"])
@@ -158,3 +173,11 @@ def with_model(model: str | None) -> dict:
             raise ValueError(f"{model} isn't one of your configured models")
         s = {**s, "llm_model": model, "passage_provider": "llm"}
     return s
+
+
+def tts_voices(s: dict | None = None) -> dict[str, str]:
+    try:
+        v = json.loads((s or load())["tts_voices"] or "{}")
+        return v if isinstance(v, dict) else {}
+    except ValueError:
+        return {}

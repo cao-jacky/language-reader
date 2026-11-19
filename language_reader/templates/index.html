@@ -99,6 +99,14 @@ div.field { margin-bottom: 14px; }
 .seg-wrap { flex-wrap: wrap; }
 .lang-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .voice-row { margin: 10px 0; }
+.piper-list { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.piper-voice { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 6px 10px; flex-wrap: wrap; }
+.piper-voice + .piper-voice { border-top: 1px solid var(--border); }
+.piper-voice.on { background: var(--accent-soft); }
+.piper-voice label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.piper-voice .pv-name { font-weight: 550; }
+.pv-actions { display: inline-flex; align-items: center; gap: 6px; }
+.pv-meter { width: 90px; margin: 0; }
 .voice-row > b { display: block; font-size: .88rem; margin-bottom: 4px; }
 .voice-row input[type=range] { width: 100%; }
 .lang-chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border); background: var(--surface-2);
@@ -614,7 +622,49 @@ function pickVoice(lang) {
     || list.find((v) => !v.name.includes("(")) || list[0] || null;
 }
 let speakingBtn = null;
+let TTS = { engine: "browser", voices: {} };  // from /api/tts/config
+
+// Piper: audio generated on the server, played with an <audio> element.
+let piperAudio = null, piperBtn = null;
+const piperCache = new Map();  // text|lang|speed|voice -> blob URL
+function stopPiper() {
+  if (piperAudio) { piperAudio.pause(); piperAudio = null; }
+  piperBtn?.classList.remove("speaking"); piperBtn = null;
+}
+async function speakPiper(text, lang, btn, voice = null) {
+  const again = piperBtn && piperBtn === btn;
+  stopPiper();
+  if (canTTS && (speechSynthesis.speaking || speechSynthesis.pending)) speechSynthesis.cancel();
+  if (again) return;  // press again to stop
+  piperBtn = btn || null;
+  btn?.classList.add("speaking");
+  const speed = Number(pref.get("tts.rate", "0.9"));
+  const key = [text, lang, speed, voice || TTS.voices[lang]].join("|");
+  try {
+    let url = piperCache.get(key);
+    if (!url) {
+      const headers = { "Content-Type": "application/json" };
+      if (TOKEN) headers.Authorization = "Bearer " + TOKEN;
+      const r = await fetch("/api/tts/speak", { method: "POST", headers, body: JSON.stringify({ text, lang, speed, voice }) });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+      url = URL.createObjectURL(await r.blob());
+      piperCache.set(key, url);
+      if (piperCache.size > 60) { const [k, u] = piperCache.entries().next().value; URL.revokeObjectURL(u); piperCache.delete(k); }
+    }
+    if (piperBtn !== (btn || null)) return;  // another button was pressed meanwhile
+    const a = new Audio(url);
+    piperAudio = a;
+    a.onended = a.onerror = () => { if (piperAudio === a) stopPiper(); };
+    await a.play();
+  } catch (err) {
+    if (piperBtn === (btn || null)) stopPiper();
+    toast(`Piper: ${err.message}`, "error");
+  }
+}
+
 function speak(text, lang, btn) {
+  if (TTS.engine === "piper" && TTS.voices[lang]) return speakPiper(text, lang, btn);
+  stopPiper();
   if (!canTTS) { toast("This browser can't read text aloud.", "error"); return; }
   if (speakingBtn && speakingBtn === btn && speechSynthesis.speaking) { speechSynthesis.cancel(); return; } // press again to stop
   // Only cancel when something is actually playing: cancelling an idle
@@ -638,7 +688,7 @@ function speak(text, lang, btn) {
 const SPEAKER_SVG = '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M3 7.5h3l4-3.5v12l-4-3.5H3z"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M13 7.2a4 4 0 0 1 0 5.6M15.3 5a7 7 0 0 1 0 10"/></svg>';
 // A 🔊 button; getText is called on click so it always reads the current text.
 function speakButton(getText, lang, { label = "", cls = "" } = {}) {
-  if (!canTTS) return null;
+  if (!canTTS && TTS.engine !== "piper") return null;
   const b = el("button", { type: "button", class: `speak ${cls}`.trim(), title: label || "Listen", "aria-label": label || "Listen" });
   b.innerHTML = SPEAKER_SVG + (label && cls.includes("btn") ? `<span>${label}</span>` : "");
   b.addEventListener("mousedown", (e) => e.preventDefault()); // keep any text selection
@@ -1614,7 +1664,7 @@ async function viewSettings() {
       const r = await api("/api/settings", { method: "PUT", body: { values: { languages: codes.join(",") } } });
       setLanguages(r.languages);
       drawLanguages();
-      drawSpeech();
+      if (TTS.engine === "piper") loadPiper(); else drawSpeech();
       toast(msg);
     } catch (err) { toast(err.message, "error"); }
   }
@@ -1650,16 +1700,98 @@ async function viewSettings() {
       el("p", { class: "muted small", style: "margin:8px 0 0" }, "Other languages rely on the model alone."));
   }
   drawLanguages();
-  // Speech: voice per language and speed, stored per device.
+  // Speech: the device's voices, or Piper on the server -------------------
+  const SAMPLES = { ru: "Здравствуйте! Как дела?", fi: "Hyvää huomenta! Mitä kuuluu?", sv: "God morgon! Hur mår du?", de: "Guten Morgen! Wie geht's?" };
+  const sampleFor = (code) => SAMPLES[code] || LANGS[code];
   const speechBox = el("div");
-  function drawSpeech() {
-    if (!canTTS) { speechBox.replaceChildren(el("p", { class: "muted small", style: "margin:0" }, "This browser can't read text aloud.")); return; }
-    const rate = el("input", { type: "range", min: "0.5", max: "1.3", step: "0.05", value: pref.get("tts.rate", "0.9"), "aria-label": "Speaking speed" });
-    const rateLabel = el("span", { class: "muted small" });
-    const showRate = () => { rateLabel.textContent = `${Math.round(Number(rate.value) * 100)}%`; };
-    rate.addEventListener("input", () => { pref.set("tts.rate", rate.value); showRate(); });
-    showRate();
-    const rows = Object.keys(LANGS).map((code) => {
+  let piperInfo = null, piperPoll = 0;
+  async function saveSpeech(values) {
+    const r = await api("/api/settings", { method: "PUT", body: { values } });
+    S = r.settings;
+    TTS = await api("/api/tts/config");
+  }
+  async function loadPiper() {
+    try { piperInfo = await api("/api/tts/voices"); } catch (err) { piperInfo = { error: err.message }; }
+    // A language with an installed voice but none chosen gets the first one.
+    const sel = { ...(piperInfo.selected || {}) };
+    let changed = false;
+    for (const [lang, list] of Object.entries(piperInfo.languages || {})) {
+      const chosen = list.find((v) => v.key === sel[lang] && v.installed);
+      const first = list.find((v) => v.installed);
+      if (!chosen && first) { sel[lang] = first.key; changed = true; }
+    }
+    if (changed) { await saveSpeech({ tts_voices: JSON.stringify(sel) }).catch(() => {}); piperInfo.selected = sel; }
+    drawSpeech();
+    clearTimeout(piperPoll);
+    const busy = Object.values(piperInfo.downloads || {}).some((d) => d.state === "downloading");
+    if (busy && speechBox.isConnected) piperPoll = setTimeout(loadPiper, 1000);
+  }
+  async function setEngine(engine) {
+    try {
+      await saveSpeech({ tts_engine: engine });
+      if (engine === "piper") { drawSpeech(); await loadPiper(); } else drawSpeech();
+    } catch (err) { toast(err.message, "error"); }
+  }
+  function testButton(lang, voice) {
+    const b = el("button", { type: "button", class: "speak", title: "Test this voice", "aria-label": "Test this voice" });
+    b.innerHTML = SPEAKER_SVG;
+    b.addEventListener("click", () => speakPiper(sampleFor(lang), lang, b, voice));
+    return b;
+  }
+  function piperRows() {
+    if (!piperInfo) return [el("div", { class: "spinner" }, "Loading Piper voices…")];
+    if (piperInfo.error) return [errorCard(new Error(piperInfo.error))];
+    const out = [];
+    if (piperInfo.catalogue_error) out.push(el("div", { class: "notes" }, piperInfo.catalogue_error));
+    for (const lang of Object.keys(LANGS)) {
+      const list = piperInfo.languages?.[lang] || [];
+      const selected = piperInfo.selected?.[lang];
+      out.push(el("div", { class: "voice-row" }, el("b", {}, LANGS[lang]),
+        list.length ? el("div", { class: "piper-list" }, list.map((v) => {
+          const dl = piperInfo.downloads?.[v.key];
+          const downloading = dl?.state === "downloading";
+          const pct = dl?.total ? Math.round((100 * dl.done) / dl.total) : 0;
+          let actions;
+          if (v.installed) {
+            actions = [testButton(lang, v.key), el("button", { type: "button", class: "icon", title: `Remove ${v.name}`, "aria-label": `Remove ${v.name}`, onclick: async () => {
+              if (!confirm(`Remove the ${v.name} voice (${v.size_mb || "?"} MB)? Its cached audio is removed too.`)) return;
+              try { await api(`/api/tts/voices/${v.key}`, { method: "DELETE" }); TTS = await api("/api/tts/config"); loadPiper(); }
+              catch (err) { toast(err.message, "error"); }
+            } }, "✕")];
+          } else if (downloading) {
+            actions = [el("span", { class: "muted small" }, `${pct}%`), el("div", { class: "meter pv-meter" }, el("div", { style: `width:${pct}%` }))];
+          } else {
+            actions = [el("button", { type: "button", class: "btn esc-btn", onclick: async () => {
+              try { await api(`/api/tts/voices/${v.key}`, { method: "POST" }); loadPiper(); } catch (err) { toast(err.message, "error"); }
+            } }, `Download${v.size_mb ? ` · ${v.size_mb} MB` : ""}`)];
+          }
+          return el("div", { class: "piper-voice" + (v.key === selected && v.installed ? " on" : "") },
+            el("label", {},
+              el("input", { type: "radio", name: `pv-${lang}`, disabled: !v.installed, checked: v.key === selected && v.installed, onchange: async () => {
+                const sel = { ...(piperInfo.selected || {}), [lang]: v.key };
+                try { await saveSpeech({ tts_voices: JSON.stringify(sel) }); piperInfo.selected = sel; drawSpeech(); toast(`${LANGS[lang]}: ${v.name}`); }
+                catch (err) { toast(err.message, "error"); }
+              } }),
+              el("span", { class: "pv-name" }, v.name),
+              el("span", { class: "muted small" }, ` ${v.quality.replace("_", " ")}${v.region ? " · " + v.region : ""}`)),
+            el("span", { class: "pv-actions" }, actions,
+              dl?.state === "error" ? el("span", { class: "small", style: "color:var(--danger)" }, dl.error) : null));
+        }))
+          : el("div", { class: "muted small" }, "Piper has no voice for this language yet, so this device's voice is used.")));
+      if (list.length && !list.some((v) => v.installed)) {
+        out[out.length - 1].append(el("div", { class: "muted small" }, "Download a voice to use Piper for this language; until then this device's voice is used."));
+      }
+    }
+    const mb = ((piperInfo.cache_bytes || 0) / 1e6).toFixed(1);
+    out.push(el("div", { class: "muted small", style: "margin-top:6px" }, `Audio cache: ${mb} MB `,
+      el("button", { type: "button", class: "link small", onclick: async () => {
+        await api("/api/tts/cache", { method: "DELETE" }); piperCache.clear(); loadPiper();
+      } }, "Clear")));
+    return out;
+  }
+  function browserRows() {
+    if (!canTTS) return [el("p", { class: "muted small", style: "margin:0" }, "This browser can't read text aloud.")];
+    return Object.keys(LANGS).map((code) => {
       const list = voicesFor(code);
       if (!list.length) {
         return el("div", { class: "kv" }, el("b", {}, LANGS[code]), " — ", el("span", { class: "muted" }, "no voice installed on this device"));
@@ -1667,21 +1799,37 @@ async function viewSettings() {
       const current = pickVoice(code);
       const select = el("select", { "aria-label": `${LANGS[code]} voice`, onchange: (e) => pref.set("tts.voice." + code, e.target.value) },
         list.map((v) => el("option", { value: v.voiceURI, selected: v === current }, `${v.name}${v.localService ? "" : " (online)"}`)));
-      const sample = { ru: "Здравствуйте! Как дела?", fi: "Hyvää huomenta! Mitä kuuluu?", sv: "God morgon! Hur mår du?", de: "Guten Morgen! Wie geht's?" }[code] || LANGS[code];
       return el("div", { class: "voice-row" }, el("b", {}, LANGS[code]),
-        el("div", { class: "add-lang" }, select, speakButton(() => sample, code, { label: "Test", cls: "btn" })));
-    });
-    speechBox.replaceChildren(...rows,
-      el("div", { class: "voice-row" }, el("b", {}, "Speed "), rateLabel, rate),
-      el("p", { class: "muted small", style: "margin:8px 0 0" },
-        "Voices come from this device, so these choices are saved in this browser only. To add one: on macOS, System Settings → Accessibility → Spoken Content → System voice → Manage voices; on iPhone, Settings → Accessibility → Spoken Content → Voices; on Windows, Settings → Time & language → Speech."));
+        el("div", { class: "add-lang" }, select, speakButton(() => sampleFor(code), code, { label: "Test", cls: "btn" })));
+    }).concat(el("p", { class: "muted small", style: "margin:8px 0 0" },
+      "These voices come from this device, so the choice is saved in this browser only. To add one: on macOS, System Settings → Accessibility → Spoken Content → System voice → Manage voices; on iPhone, Settings → Accessibility → Spoken Content → Voices; on Windows, Settings → Time & language → Speech."));
+  }
+  function drawSpeech() {
+    const piper = TTS.engine === "piper";
+    const rate = el("input", { type: "range", min: "0.5", max: "1.3", step: "0.05", value: pref.get("tts.rate", "0.9"), "aria-label": "Speaking speed" });
+    const rateLabel = el("span", { class: "muted small" });
+    const showRate = () => { rateLabel.textContent = `${Math.round(Number(rate.value) * 100)}%`; };
+    rate.addEventListener("input", () => { pref.set("tts.rate", rate.value); showRate(); });
+    showRate();
+    speechBox.replaceChildren(
+      el("div", { class: "radio-row" },
+        el("label", {}, el("input", { type: "radio", name: "tts-engine", checked: !piper, onchange: () => setEngine("browser") }), "This device's voices"),
+        el("label", { title: TTS.piper_available ? "" : "Piper isn't installed on the server" },
+          el("input", { type: "radio", name: "tts-engine", checked: piper, disabled: !TTS.piper_available, onchange: () => setEngine("piper") }), "Piper on the server")),
+      el("p", { class: "muted small", style: "margin:-4px 0 10px" }, piper
+        ? "Natural-sounding neural voices generated on your server, the same on every device. Each voice is a one-time download of about 60 MB; audio is cached."
+        : "Free and instant, but quality depends on the device. Piper sounds more natural."),
+      ...(piper ? piperRows() : browserRows()),
+      el("div", { class: "voice-row" }, el("b", {}, "Speed "), rateLabel, rate));
   }
   drawSpeech();
-  if (canTTS) speechSynthesis.addEventListener("voiceschanged", () => { if (speechBox.isConnected) drawSpeech(); });
+  if (TTS.engine === "piper") loadPiper();
+  if (canTTS) speechSynthesis.addEventListener("voiceschanged", () => { if (speechBox.isConnected && TTS.engine !== "piper") drawSpeech(); });
+  const speechCard = el("div", { class: "form-card", style: "max-width:none;margin-top:20px" },
+    el("h2", {}, "Speech"),
+    el("p", { class: "muted small", style: "margin-top:-6px" }, "Use 🔊 to hear a selection, a word, a phrase or a sentence read aloud."),
+    speechBox);
   const side = el("div", {},
-    el("div", { class: "card" }, el("h2", {}, "Speech"),
-      el("p", { class: "muted small", style: "margin-top:-6px" }, "Use 🔊 to hear a selection, a word, a phrase or a sentence read aloud."),
-      speechBox),
     el("div", { class: "card" },
       el("h2", {}, "Offline analysers"),
       el("p", { class: "muted small", style: "margin-top:-6px" }, "When available, their candidate dictionary forms are passed to the model as hints."),
@@ -1773,7 +1921,7 @@ async function viewSettings() {
   }
   loadUsage();
 
-  view.replaceChildren(el("div", { class: "page-head" }, el("h1", {}, "Settings")), el("div", { class: "settings-grid" }, el("div", {}, langCard, form, usageCard), side));
+  view.replaceChildren(el("div", { class: "page-head" }, el("h1", {}, "Settings")), el("div", { class: "settings-grid" }, el("div", {}, langCard, form, speechCard, usageCard), side));
   fill();
 }
 
@@ -1781,6 +1929,7 @@ async function viewSettings() {
   try {
     const [langs, models] = await Promise.all([api("/api/languages"), api("/api/models")]);
     setLanguages(langs); MODELS = models;
+    TTS = await api("/api/tts/config").catch(() => TTS);
   }
   catch (e) { view.replaceChildren(errorCard(e)); return; }
   route();
