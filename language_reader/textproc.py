@@ -51,6 +51,54 @@ def _add(spans: list[tuple[int, int]], body: str, s: int, e: int) -> None:
         spans.append((s, e))
 
 
+_FI_WORDS = frozenset(
+    "ja on ei se että kun mutta niin oli ovat myös tai joka jos hän minä sinä me te he olen ole "
+    "olla tämä tuo nyt vain kuin sitten jo vielä koska mitä mikä kanssa olisi voi pitää eikä siis "
+    "sen sitä hänen".split()
+)
+
+
+def detect_lang(text: str) -> str | None:
+    """Return 'ru', 'fi', or None when the text is neither (or too short to tell).
+
+    Russian is recognised by script, ruling out Ukrainian and Belarusian by
+    their own letters. Finnish is recognised by common function words or a high
+    rate of ä/ö without the letters that mark German, Swedish or Estonian.
+    The same rules run in the browser for live feedback.
+    """
+    letters = [c for c in text if c.isalpha()]
+    n = len(letters)
+    cyr = sum("Ѐ" <= c <= "ӿ" for c in letters)
+    if cyr >= 3 and cyr / n > 0.5:
+        other = sum(c in "іїєґўІЇЄҐЎ" for c in letters)
+        return None if other / n > 0.01 else "ru"
+    if n < 15:
+        return None
+    lower = text.lower()
+    words = re.findall(r"[^\W\d_]+", lower)
+    if not words:
+        return None
+    hits = sum(w in _FI_WORDS for w in words) / len(words)
+    ao = sum(c in "äö" for c in lower) / n
+    # Finnish uses b c f q w x z only in loanwords; English, German and
+    # Swedish use them constantly. ü ß å õ mark German, Swedish and Estonian.
+    foreign = sum(c in "bcfqwxzüßåõ" for c in lower) / n
+    if foreign >= 0.025:
+        return None
+    return "fi" if hits >= 0.06 or ao >= 0.02 else None
+
+
+def default_title(body: str, limit: int = 70) -> str:
+    """First sentence, cut at a word boundary."""
+    spans = split_sentences(body)
+    first = body[spans[0][0] : spans[0][1]] if spans else body.strip()
+    first = first.split("\n", 1)[0].strip()
+    if len(first) <= limit:
+        return first
+    cut = first[:limit].rsplit(" ", 1)[0].rstrip(",;:—–- ")
+    return (cut or first[:limit]) + "…"
+
+
 def tokens(body: str, start: int = 0, end: int | None = None) -> list[tuple[int, int]]:
     end = len(body) if end is None else end
     return [(m.start(), m.end()) for m in WORD_RE.finditer(body, start, end)]

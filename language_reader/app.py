@@ -108,7 +108,7 @@ def _surfaces(c, lang: str) -> dict:
 
 
 class NewText(BaseModel):
-    lang: str
+    lang: str = "auto"
     title: str = ""
     body: str = Field(min_length=1, max_length=200_000)
     source_url: str = ""
@@ -141,24 +141,30 @@ def list_texts(lang: str = "") -> list[dict]:
 
 @app.post("/api/texts")
 def create_text(req: NewText) -> dict:
-    if req.lang not in LANGS:
-        raise HTTPException(400, "lang must be ru or fi")
     body = req.body.replace("\r\n", "\n").strip()
     if not body:
         raise HTTPException(400, "The text is empty")
-    title = req.title.strip() or body.split("\n", 1)[0][:80]
+    lang = req.lang
+    if lang == "auto":
+        lang = textproc.detect_lang(body)
+        if not lang:
+            names = " or ".join(analysis.LANG_NAMES.values())
+            raise HTTPException(400, f"Couldn't detect the language. Choose {names} instead of auto-detect.")
+    if lang not in LANGS:
+        raise HTTPException(400, "lang must be auto, " + ", ".join(sorted(LANGS)))
+    title = req.title.strip() or textproc.default_title(body)
     spans = textproc.split_sentences(body)
     with db.tx() as c:
         cur = c.execute(
             "INSERT INTO texts(lang, title, source_url, body) VALUES(?, ?, ?, ?)",
-            (req.lang, title, req.source_url.strip() or None, body),
+            (lang, title, req.source_url.strip() or None, body),
         )
         tid = cur.lastrowid
         c.executemany(
             "INSERT INTO sentences(text_id, idx, start, end) VALUES(?, ?, ?, ?)",
             [(tid, i, s, e) for i, (s, e) in enumerate(spans)],
         )
-    return {"id": tid}
+    return {"id": tid, "lang": lang}
 
 
 @app.get("/api/texts/{tid}")

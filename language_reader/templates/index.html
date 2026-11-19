@@ -87,6 +87,10 @@ textarea { resize: vertical; line-height: 1.6; }
 label.field { display: block; margin-bottom: 14px; }
 label.field > span { display: block; font-weight: 550; margin-bottom: 4px; font-size: .9rem; }
 label.field small { display: block; color: var(--muted); margin-top: 4px; font-size: .82rem; }
+div.field { margin-bottom: 14px; }
+.field-label { display: block; font-weight: 550; margin-bottom: 4px; font-size: .9rem; }
+.detect-hint { display: block; color: var(--muted); margin-top: 6px; font-size: .82rem; min-height: 1.2em; }
+.detect-hint.warn { color: var(--danger); }
 
 .badge { display: inline-block; font-size: .72rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase;
   padding: 2px 7px; border-radius: 4px; background: var(--surface-2); color: var(--muted); }
@@ -129,13 +133,17 @@ label.field small { display: block; color: var(--muted); margin-top: 4px; font-s
 .text .row .tr.missing { opacity: .5; }
 .w { cursor: pointer; border-radius: 3px; transition: background .1s; }
 .w:hover { background: var(--accent-soft); }
+.text.selecting .w:hover { background: none; }
+.text.selecting .w.st-new:hover { background: var(--new-bg); }
+.text.selecting .w.st-learning:hover { background: var(--learning-bg); }
+.text ::selection { background: color-mix(in srgb, var(--accent) 32%, transparent); }
 .w.st-new { background: var(--new-bg); }
 .w.st-learning { background: var(--learning-bg); }
 .w.st-known { text-decoration: underline 1px var(--known-line); text-underline-offset: 4px; }
 .w.ph { box-shadow: inset 0 -2px 0 var(--phrase-line); }
 .w.active { outline: 2px solid var(--accent); outline-offset: 1px; }
 .sent { border-radius: 4px; }
-.sel-btn { position: absolute; z-index: 30; box-shadow: var(--shadow); }
+.sel-btn { position: absolute; z-index: 30; box-shadow: var(--shadow); padding: 5px 11px; font-size: .88rem; }
 
 .panel { position: sticky; top: 68px; max-height: calc(100vh - 84px); overflow: auto; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin-bottom: 12px; }
@@ -393,29 +401,67 @@ async function viewLibrary() {
 }
 
 // ------------------------------------------------------------------ new text
+// Mirrors textproc.detect_lang on the server, for live feedback while pasting.
+const FI_WORDS = new Set("ja on ei se että kun mutta niin oli ovat myös tai joka jos hän minä sinä me te he olen ole olla tämä tuo nyt vain kuin sitten jo vielä koska mitä mikä kanssa olisi voi pitää eikä siis sen sitä hänen".split(" "));
+function detectLang(text) {
+  const letters = [...text].filter((c) => /\p{L}/u.test(c));
+  const n = letters.length;
+  const cyr = letters.filter((c) => c >= "Ѐ" && c <= "ӿ").length;
+  if (cyr >= 3 && cyr / n > 0.5) {
+    const other = letters.filter((c) => "іїєґўІЇЄҐЎ".includes(c)).length;
+    return other / n > 0.01 ? null : "ru";
+  }
+  if (n < 15) return null;
+  const lower = text.toLowerCase();
+  const words = lower.match(/\p{L}+/gu) || [];
+  if (!words.length) return null;
+  const hits = words.filter((w) => FI_WORDS.has(w)).length / words.length;
+  const ao = [...lower].filter((c) => c === "ä" || c === "ö").length / n;
+  const foreign = [...lower].filter((c) => "bcfqwxzüßåõ".includes(c)).length / n;
+  if (foreign >= 0.025) return null;
+  return hits >= 0.06 || ao >= 0.02 ? "fi" : null;
+}
+
 function viewNew() {
-  let lang = pref.get("new.lang", "ru");
+  let lang = pref.get("new.lang", "auto");
+  if (lang !== "auto" && !LANGS[lang]) lang = "auto";
   const seg = el("div", { class: "seg" });
-  for (const [k, name] of Object.entries(LANGS)) {
+  const hint = el("small", { class: "detect-hint" });
+  for (const [k, name] of [["auto", "Auto-detect"], ...Object.entries(LANGS)]) {
     seg.append(el("button", { type: "button", class: lang === k ? "on" : "", onclick: (e) => {
       lang = k; pref.set("new.lang", k);
       seg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === e.currentTarget));
-      body.setAttribute("lang", k);
+      updateHint();
     } }, name));
   }
-  const title = el("input", { type: "text", placeholder: "Optional — the first line is used otherwise" });
+  const title = el("input", { type: "text", placeholder: "Optional — taken from the first sentence otherwise" });
   const src = el("input", { type: "url", placeholder: "https://…" });
-  const body = el("textarea", { rows: 16, lang, required: true, placeholder: "Paste the text you want to read…" });
+  const body = el("textarea", { rows: 16, required: true, placeholder: "Paste the text you want to read…" });
   const submit = el("button", { class: "btn primary", type: "submit" }, "Start reading");
+  let detected = null;
+  function updateHint() {
+    detected = detectLang(body.value);
+    const effective = lang === "auto" ? detected : lang;
+    body.setAttribute("lang", effective || "");
+    if (lang !== "auto") { hint.textContent = ""; return; }
+    hint.className = "detect-hint" + (body.value.trim() && !detected ? " warn" : "");
+    hint.textContent = !body.value.trim() ? "The language is detected from the text."
+      : detected ? `Detected: ${LANGS[detected]}` : "Couldn't tell which language this is. Choose one.";
+  }
+  let t;
+  body.addEventListener("input", () => { clearTimeout(t); t = setTimeout(updateHint, 200); });
+  updateHint();
   const form = el("form", { class: "form-card", onsubmit: async (e) => {
     e.preventDefault();
+    updateHint();
+    if (lang === "auto" && !detected) { toast("Couldn't detect the language. Choose it above the text.", "error"); return; }
     submit.disabled = true;
     try {
       const r = await api("/api/texts", { method: "POST", body: { lang, title: title.value, source_url: src.value, body: body.value } });
       location.hash = `#/text/${r.id}`;
     } catch (err) { toast(err.message, "error"); submit.disabled = false; }
   } },
-    el("label", { class: "field" }, el("span", {}, "Language"), seg),
+    el("div", { class: "field" }, el("span", { class: "field-label" }, "Language"), seg, hint),
     el("div", { class: "form-row" },
       el("label", { class: "field" }, el("span", {}, "Title"), title),
       el("label", { class: "field" }, el("span", {}, "Source"), src)),
@@ -710,29 +756,75 @@ function posOf(node, offset) {
   return null;
 }
 
+const COARSE = matchMedia("(pointer: coarse)").matches;
+
 function onSelect() {
   setTimeout(() => {
-    const sel = getSelection();
-    if (!R || !sel || sel.isCollapsed || !sel.rangeCount) return hideSelBtn();
-    const range = sel.getRangeAt(0);
     const art = $("#text");
-    if (!art || !art.contains(range.commonAncestorContainer)) return hideSelBtn();
+    art?.classList.remove("selecting");
+    const sel = getSelection();
+    if (!R || !art || !sel || sel.isCollapsed || !sel.rangeCount) return hideSelBtn();
+    const range = sel.getRangeAt(0);
+    if (!art.contains(range.commonAncestorContainer)) return hideSelBtn();
     const s0 = posOf(range.startContainer, range.startOffset), e0 = posOf(range.endContainer, range.endOffset);
     if (s0 == null || e0 == null || e0 <= s0) return hideSelBtn();
+    // Snap to whole words: what gets translated is exactly what is highlighted.
     const first = R.tokens.find(([, b]) => b > s0);
     const last = [...R.tokens].reverse().find(([a]) => a < e0);
     if (!first || !last || first[0] >= last[1] || first === last) return hideSelBtn();
     const s = first[0], e = last[1];
-    const rect = range.getBoundingClientRect();
-    hideSelBtn();
-    selBtn = el("button", { class: "btn primary sel-btn",
-      style: `top:${rect.bottom + window.scrollY + 8}px;left:${Math.max(8, Math.min(rect.left + window.scrollX, document.documentElement.clientWidth - 190))}px`,
-      onmousedown: (ev) => ev.preventDefault(),
-      onclick: () => translatePhrase(s, e) }, "Translate phrase");
-    document.body.append(selBtn);
+    const ws = art.querySelector(`.w[data-s="${s}"]`), we = art.querySelector(`.w[data-e="${e}"]`);
+    if (ws && we && !COARSE) {
+      // Rewriting the selection would fight the drag handles on touch screens.
+      const snapped = document.createRange();
+      snapped.setStart(ws.firstChild, 0);
+      snapped.setEnd(we.firstChild, we.firstChild.length);
+      sel.removeAllRanges();
+      sel.addRange(snapped);
+    }
+    showSelBtn(sel.getRangeAt(0), s, e);
   }, 0);
 }
-document.addEventListener("mousedown", (e) => { if (selBtn && e.target !== selBtn) hideSelBtn(); });
+
+function showSelBtn(range, s, e) {
+  hideSelBtn();
+  selBtn = el("button", { class: "btn primary sel-btn",
+    onmousedown: (ev) => ev.preventDefault(),
+    onclick: () => translatePhrase(s, e) }, "Translate phrase");
+  document.body.append(selBtn);
+  // Sit above the first line of the selection, clear of the sticky header;
+  // drop below the last line when there is no room above.
+  const rects = [...range.getClientRects()].filter((r) => r.width > 0);
+  if (!rects.length) rects.push(range.getBoundingClientRect());
+  // Merge the per-element rects into the first and last visual lines.
+  const line = (ref) => {
+    const same = rects.filter((r) => Math.abs(r.top - ref.top) < ref.height / 2);
+    const left = Math.min(...same.map((r) => r.left)), right = Math.max(...same.map((r) => r.right));
+    return { top: Math.min(...same.map((r) => r.top)), bottom: Math.max(...same.map((r) => r.bottom)), left, width: right - left };
+  };
+  const top = line(rects[0]), bottom = line(rects[rects.length - 1]);
+  const bw = selBtn.offsetWidth, bh = selBtn.offsetHeight, gap = 8;
+  const header = ($(".top")?.offsetHeight || 0) + 4;
+  const above = top.top - bh - gap >= header;
+  const y = above ? top.top - bh - gap : bottom.bottom + gap;
+  const anchor = above ? top : bottom;
+  const x = Math.max(8, Math.min(anchor.left + anchor.width / 2 - bw / 2, document.documentElement.clientWidth - bw - 8));
+  selBtn.style.top = `${y + window.scrollY}px`;
+  selBtn.style.left = `${x + window.scrollX}px`;
+}
+
+document.addEventListener("mousedown", (e) => {
+  if (selBtn && e.target !== selBtn) hideSelBtn();
+  const art = e.target.closest?.("#text");
+  // Suppress word hover boxes while dragging out a selection.
+  if (art && e.button === 0) art.classList.add("selecting");
+});
+document.addEventListener("mouseup", () => $("#text")?.classList.remove("selecting"));
+if (COARSE) {
+  // Touch selections are adjusted with drag handles and fire no mouseup on the text.
+  let t;
+  document.addEventListener("selectionchange", () => { clearTimeout(t); t = setTimeout(onSelect, 400); });
+}
 
 async function translatePhrase(s, e) {
   hideSelBtn();
