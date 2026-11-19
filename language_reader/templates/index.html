@@ -600,9 +600,11 @@ const voicesFor = (lang) => VOICES.filter((v) => voiceLang(v) === (lang === "nb"
 function pickVoice(lang) {
   const list = voicesFor(lang);
   const saved = pref.get("tts.voice." + lang);
-  // Prefer the saved voice, then premium/enhanced ones, then plain system
-  // voices over the novelty ones (macOS names those "Eddy (Finnish (Finland))").
-  return list.find((v) => v.voiceURI === saved) || list.find((v) => /premium|enhanced/i.test(v.name))
+  // Prefer the saved voice, then neural ones (Edge's "… Online (Natural)"),
+  // then premium/enhanced system voices, then plain system voices over the
+  // novelty ones (macOS names those "Eddy (Finnish (Finland))").
+  return list.find((v) => v.voiceURI === saved) || list.find((v) => /natural|neural/i.test(v.name))
+    || list.find((v) => /premium|enhanced/i.test(v.name))
     || list.find((v) => !v.name.includes("(")) || list[0] || null;
 }
 let speakingBtn = null;
