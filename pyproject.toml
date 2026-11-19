@@ -1,0 +1,26 @@
+[project]
+name = "language-reader"
+version = "0.1.0"
+description = "Self-hosted reader for learning Russian and Finnish: click words, translate phrases and passages, keep a CEFR-tagged vocabulary"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "anthropic>=2.10,<3",
+    "pymorphy3>=2.0",
+    "pymorphy3-dicts-ru>=2.4",
+]
+
+[project.optional-dependencies]
+finnish = ["libvoikko>=4.3"]
+
+[project.scripts]
+language-reader = "language_reader.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["language_reader"]

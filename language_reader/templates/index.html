@@ -1,0 +1,1068 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Language Reader</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232b5f8f'/><text x='16' y='23' font-size='15' text-anchor='middle' fill='white' font-family='Georgia'>Aa</text></svg>">
+<style>
+:root {
+  --bg: #faf8f3; --surface: #ffffff; --surface-2: #f2efe7; --text: #1f1e1b; --muted: #6d6a62;
+  --border: #e4dfd3; --accent: #2b5f8f; --accent-soft: rgba(43,95,143,.10); --accent-text: #fff;
+  --new-bg: rgba(240,194,75,.32); --new-line: #d9a514;
+  --learning-bg: rgba(232,135,58,.22); --learning-line: #d0701f;
+  --known-line: #4f9a6c;
+  --phrase-line: #2b5f8f; --danger: #b33a2f; --ok: #2f7d4f;
+  --cefr-a: #2f7d4f; --cefr-b: #2b5f8f; --cefr-c: #7a4cb0;
+  --shadow: 0 1px 2px rgba(0,0,0,.05), 0 4px 16px rgba(0,0,0,.06);
+  --serif: "Literata", "PT Serif", "Iowan Old Style", "Charter", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161615; --surface: #1f1f1d; --surface-2: #2a2926; --text: #ecebe6; --muted: #a19d93;
+    --border: #3a3833; --accent: #7fb0e0; --accent-soft: rgba(127,176,224,.14); --accent-text: #0f1b27;
+    --new-bg: rgba(240,194,75,.22); --new-line: #e6bb45;
+    --learning-bg: rgba(232,135,58,.26); --learning-line: #ec9550;
+    --known-line: #6cc08b; --phrase-line: #7fb0e0; --danger: #ef7d71; --ok: #6cc08b;
+    --cefr-a: #6cc08b; --cefr-b: #7fb0e0; --cefr-c: #b996e6;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.3);
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--text); font: 15px/1.5 var(--sans); }
+a { color: var(--accent); }
+h1 { font-size: 1.45rem; margin: 0; font-weight: 650; letter-spacing: -.01em; }
+h2 { font-size: 1.05rem; margin: 0 0 .75rem; font-weight: 650; }
+button, input, select, textarea { font: inherit; color: inherit; }
+
+/* top bar */
+.top { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
+.top-inner { max-width: 1240px; margin: 0 auto; padding: 0 16px; height: 52px; display: flex; align-items: center; gap: 20px; }
+.brand { font: 600 1.15rem var(--serif); color: var(--text); text-decoration: none; display: flex; align-items: center; gap: 8px; }
+.brand .mark { width: 26px; height: 26px; border-radius: 6px; background: var(--accent); color: var(--accent-text);
+  display: grid; place-items: center; font-size: .78rem; font-family: var(--serif); }
+nav { display: flex; gap: 2px; overflow-x: auto; }
+nav a { text-decoration: none; color: var(--muted); padding: 6px 10px; border-radius: 6px; white-space: nowrap; }
+nav a:hover { color: var(--text); background: var(--surface-2); }
+nav a.active { color: var(--text); background: var(--surface-2); font-weight: 550; }
+
+main { max-width: 1240px; margin: 0 auto; padding: 24px 16px 80px; }
+.page-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+.muted { color: var(--muted); }
+.small { font-size: .85rem; }
+.loading, .spinner { color: var(--muted); padding: 12px 0; }
+.spinner::before { content: ""; display: inline-block; width: 12px; height: 12px; margin-right: 8px; vertical-align: -1px;
+  border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.error-box { border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent); background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--text); padding: 12px 14px; border-radius: 8px; }
+.error-box b { color: var(--danger); }
+
+/* controls */
+.btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: var(--surface);
+  padding: 7px 13px; border-radius: 7px; cursor: pointer; text-decoration: none; color: var(--text); white-space: nowrap; }
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.btn:disabled { opacity: .55; cursor: default; }
+.btn.danger { color: var(--danger); }
+button.link { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; }
+button.link.danger { color: var(--danger); }
+button.icon { background: none; border: 1px solid transparent; border-radius: 6px; width: 30px; height: 30px; cursor: pointer; color: var(--muted); }
+button.icon:hover { border-color: var(--border); color: var(--text); }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.seg button { border: 0; background: none; padding: 6px 12px; cursor: pointer; color: var(--muted); }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button.on { background: var(--accent-soft); color: var(--accent); font-weight: 550; }
+input[type=text], input[type=url], input[type=password], input[type=search], input:not([type]), select, textarea {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; width: 100%; }
+input:focus, select:focus, textarea:focus, button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+textarea { resize: vertical; line-height: 1.6; }
+label.field { display: block; margin-bottom: 14px; }
+label.field > span { display: block; font-weight: 550; margin-bottom: 4px; font-size: .9rem; }
+label.field small { display: block; color: var(--muted); margin-top: 4px; font-size: .82rem; }
+
+.badge { display: inline-block; font-size: .72rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 4px; background: var(--surface-2); color: var(--muted); }
+.badge.lang-ru { background: color-mix(in srgb, #c0392b 14%, transparent); color: color-mix(in srgb, #c0392b 80%, var(--text)); }
+.badge.lang-fi { background: color-mix(in srgb, #1f6fb2 14%, transparent); color: color-mix(in srgb, #1f6fb2 80%, var(--text)); }
+.cefr { display: inline-block; font: 700 .72rem var(--sans); padding: 2px 6px; border-radius: 4px; border: 1px solid currentColor; }
+.cefr-A { color: var(--cefr-a); } .cefr-B { color: var(--cefr-b); } .cefr-C { color: var(--cefr-c); }
+
+/* library */
+.stats-strip { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 10px 14px; min-width: 180px; }
+.stat .n { font-size: 1.3rem; font-weight: 650; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.text-card { display: block; text-decoration: none; color: inherit; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 14px 16px; transition: border-color .15s, box-shadow .15s; }
+.text-card:hover { border-color: var(--accent); box-shadow: var(--shadow); }
+.text-card h3 { margin: 8px 0 6px; font: 600 1.05rem var(--serif); }
+.text-card .preview { color: var(--muted); font-family: var(--serif); font-size: .92rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.text-card .meta { margin-top: 10px; color: var(--muted); font-size: .8rem; }
+.empty { text-align: center; padding: 56px 16px; border: 1px dashed var(--border); border-radius: 12px; color: var(--muted); }
+.empty p { margin: 0 0 14px; }
+
+/* new text */
+.form-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; max-width: 860px; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-card textarea { font-family: var(--serif); font-size: 1.05rem; }
+
+/* reader */
+.reader-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.rh-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.rh-title h1 { font-family: var(--serif); }
+.rh-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.reader-body { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 24px; align-items: start; }
+.text { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 28px 32px; font: 1.22rem/1.9 var(--serif); }
+.text .flow { white-space: pre-wrap; overflow-wrap: break-word; }
+.text.parallel { padding: 8px 0; }
+.text .row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 10px 24px; border-bottom: 1px solid var(--border); }
+.text .row:last-child { border-bottom: 0; }
+.text .row .tr { font: .98rem/1.6 var(--sans); color: var(--muted); padding-top: 4px; }
+.text .row .tr.missing { opacity: .5; }
+.w { cursor: pointer; border-radius: 3px; transition: background .1s; }
+.w:hover { background: var(--accent-soft); }
+.w.st-new { background: var(--new-bg); }
+.w.st-learning { background: var(--learning-bg); }
+.w.st-known { text-decoration: underline 1px var(--known-line); text-underline-offset: 4px; }
+.w.ph { box-shadow: inset 0 -2px 0 var(--phrase-line); }
+.w.active { outline: 2px solid var(--accent); outline-offset: 1px; }
+.sent { border-radius: 4px; }
+.sel-btn { position: absolute; z-index: 30; box-shadow: var(--shadow); }
+
+.panel { position: sticky; top: 68px; max-height: calc(100vh - 84px); overflow: auto; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin-bottom: 12px; }
+.card .k { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 650; margin-right: 6px; }
+.wc-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.surface { color: var(--muted); font: 1rem var(--serif); }
+.lemma-line { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin: 2px 0 8px; }
+.lemma { font: 600 1.6rem/1.2 var(--serif); }
+.pos { color: var(--muted); font-style: italic; }
+.gloss { font-size: 1.1rem; font-weight: 550; margin-bottom: 8px; }
+.morph { color: var(--muted); margin-bottom: 10px; }
+.kv { margin: 6px 0; }
+.notes { background: var(--surface-2); border-radius: 8px; padding: 8px 10px; margin: 10px 0; font-size: .92rem; }
+.status-seg { margin: 12px 0 4px; }
+.st-btn.st-new.on { background: var(--new-bg); color: var(--text); }
+.st-btn.st-learning.on { background: var(--learning-bg); color: var(--text); }
+.st-btn.st-known.on { background: color-mix(in srgb, var(--known-line) 22%, transparent); color: var(--text); }
+.sent-box { border-top: 1px solid var(--border); margin-top: 14px; padding-top: 10px; }
+.sent-tr { font-size: .93rem; color: var(--muted); }
+.card-foot { display: flex; justify-content: space-between; gap: 12px; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); font-size: .88rem; }
+.phrase-src { font: 1.12rem/1.5 var(--serif); margin: 4px 0 10px; }
+.help p { margin: 0 0 8px; color: var(--muted); font-size: .92rem; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .85rem; margin-top: 8px; }
+.legend span.sw { display: inline-block; width: 22px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 4px; }
+.phrase-list { list-style: none; padding: 0; margin: 0; }
+.phrase-list li { padding: 8px 0; border-top: 1px solid var(--border); cursor: pointer; }
+.phrase-list li:first-child { border-top: 0; }
+.phrase-list li:hover .p-src { color: var(--accent); }
+.p-src { font-family: var(--serif); }
+.p-tr { color: var(--muted); font-size: .88rem; }
+.close-sheet { display: none; }
+
+/* vocab */
+.filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+.filters select { width: auto; }
+.filters input[type=search] { width: 240px; max-width: 100%; }
+.table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 650; background: var(--surface-2); }
+tr:last-child td { border-bottom: 0; }
+tr.word-row { cursor: pointer; }
+tr.word-row:hover td { background: color-mix(in srgb, var(--surface-2) 60%, transparent); }
+td .lemma-cell { font: 600 1.08rem var(--serif); }
+td .ex { color: var(--muted); font: .88rem var(--serif); margin-top: 3px; }
+td .ex b { color: var(--text); font-weight: 600; }
+td select { width: auto; padding: 3px 6px; font-size: .85rem; }
+tr.detail td { background: var(--surface-2); }
+.occ { padding: 8px 0; border-top: 1px solid var(--border); }
+.occ:first-child { border-top: 0; }
+.occ .s { font-family: var(--serif); }
+.occ .s b { background: var(--new-bg); border-radius: 3px; font-weight: 600; }
+.cefr-bar { display: flex; gap: 6px; flex-wrap: wrap; font-size: .82rem; margin-top: 4px; }
+.cefr-bar span { color: var(--muted); }
+
+/* settings */
+.settings-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; align-items: start; max-width: 1100px; }
+.presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin-bottom: 18px; }
+.preset { text-align: left; border: 1px solid var(--border); background: var(--surface); border-radius: 9px; padding: 9px 11px; cursor: pointer; }
+.preset:hover { border-color: var(--accent); }
+.preset.on { border-color: var(--accent); background: var(--accent-soft); }
+.preset b { display: block; font-weight: 600; }
+.preset small { color: var(--muted); }
+.radio-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+.radio-row label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+.key-row { display: flex; gap: 8px; }
+.key-row input { flex: 1; }
+.test-result { margin-top: 14px; border-radius: 9px; padding: 12px 14px; font-size: .92rem; }
+.test-result.ok { background: color-mix(in srgb, var(--ok) 10%, transparent); border: 1px solid color-mix(in srgb, var(--ok) 35%, transparent); }
+.test-result.fail { background: color-mix(in srgb, var(--danger) 9%, transparent); border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent); }
+.test-result pre { white-space: pre-wrap; margin: 8px 0 0; font-size: .82rem; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.dot.on { background: var(--ok); } .dot.off { background: var(--muted); opacity: .5; }
+hr.sep { border: 0; border-top: 1px solid var(--border); margin: 20px 0; }
+
+#toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 50; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
+#toast div { background: var(--text); color: var(--bg); padding: 9px 14px; border-radius: 8px; box-shadow: var(--shadow); font-size: .9rem; max-width: min(90vw, 520px); }
+#toast div.error { background: var(--danger); color: #fff; }
+
+@media (max-width: 960px) {
+  .reader-body, .settings-grid { grid-template-columns: 1fr; }
+  .panel { position: static; max-height: none; }
+  .panel.open { position: fixed; left: 0; right: 0; bottom: 0; top: auto; z-index: 25; max-height: 55vh; overflow: auto;
+    background: var(--bg); border-top: 1px solid var(--border); box-shadow: 0 -6px 24px rgba(0,0,0,.15); padding: 12px 12px 4px; }
+  .panel.open .close-sheet { display: inline-block; }
+  .text { padding: 20px 18px; font-size: 1.15rem; }
+  .text .row { grid-template-columns: 1fr; gap: 4px; padding: 10px 16px; }
+  .form-row { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+  .top-inner { gap: 10px; }
+  .brand span:last-child { display: none; }
+  main { padding-top: 16px; }
+  .stat { min-width: 0; flex: 1 1 140px; }
+  .cards { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-inner">
+    <a class="brand" href="#/"><span class="mark">Aa</span><span>Language Reader</span></a>
+    <nav>
+      <a href="#/">Library</a>
+      <a href="#/new">New text</a>
+      <a href="#/vocab">Vocabulary</a>
+      <a href="#/settings">Settings</a>
+    </nav>
+  </div>
+</header>
+<main id="view"></main>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+const LANGS = { ru: "Russian", fi: "Finnish" };
+const STATUS_LABEL = { new: "New", learning: "Learning", known: "Known" };
+const CEFR = ["A1", "A2", "B1", "B2", "C1", "C2"];
+const view = document.getElementById("view");
+
+// ------------------------------------------------------------------ utils
+const pref = {
+  get(k, d = "") { try { return localStorage.getItem("reader." + k) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("reader." + k, v); } catch {} },
+};
+let TOKEN = pref.get("token");
+
+function el(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === "class") e.className = v;
+    else if (k.startsWith("on") && typeof v === "function") e.addEventListener(k.slice(2), v);
+    else if (["value", "checked", "selected", "disabled"].includes(k)) e[k] = v;
+    else e.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of kids.flat(Infinity)) if (c != null && c !== false && c !== "") e.append(c instanceof Node ? c : String(c));
+  return e;
+}
+const $ = (s, root = document) => root.querySelector(s);
+
+function toast(msg, kind = "") {
+  const t = el("div", { class: kind }, msg);
+  $("#toast").append(t);
+  setTimeout(() => t.remove(), kind === "error" ? 6000 : 2600);
+}
+
+async function api(path, opts = {}) {
+  const headers = {};
+  if (opts.body !== undefined) headers["Content-Type"] = "application/json";
+  if (TOKEN) headers.Authorization = "Bearer " + TOKEN;
+  const r = await fetch(path, { method: opts.method || "GET", headers, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined });
+  if (r.status === 401) {
+    const t = prompt("This Language Reader instance needs an access token:");
+    if (t) { TOKEN = t.trim(); pref.set("token", TOKEN); return api(path, opts); }
+    throw new Error("Unauthorized");
+  }
+  const ct = r.headers.get("content-type") || "";
+  const data = ct.includes("json") ? await r.json() : await r.text();
+  if (!r.ok) {
+    const err = new Error(typeof data === "object" ? (typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail)) : data || r.statusText);
+    err.status = r.status;
+    throw err;
+  }
+  return data;
+}
+
+function fmtDate(s) {
+  if (!s) return "";
+  const d = new Date(s.replace(" ", "T") + "Z");
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+function errorCard(err) {
+  return el("div", { class: "error-box" },
+    el("b", {}, err.status === 502 ? "Backend error" : "Error"), " — ", err.message,
+    err.status === 502 ? el("div", { class: "small", style: "margin-top:6px" }, el("a", { href: "#/settings" }, "Check the backend settings →")) : null);
+}
+
+function highlight(sentence, surface) {
+  if (!sentence) return "";
+  const i = surface ? sentence.indexOf(surface) : -1;
+  if (i < 0) return sentence;
+  return [sentence.slice(0, i), el("b", {}, surface), sentence.slice(i + surface.length)];
+}
+
+// ------------------------------------------------------------------ router
+async function route() {
+  const h = location.hash || "#/";
+  for (const a of document.querySelectorAll("nav a")) {
+    const href = a.getAttribute("href");
+    a.classList.toggle("active", href === "#/" ? (h === "#/" || h === "#" || h.startsWith("#/text")) : h.startsWith(href));
+  }
+  hideSelBtn();
+  R = null;
+  view.replaceChildren(el("div", { class: "loading" }, "Loading…"));
+  window.scrollTo(0, 0);
+  try {
+    let m;
+    if (h === "#/" || h === "#") await viewLibrary();
+    else if (h === "#/new") viewNew();
+    else if ((m = h.match(/^#\/text\/(\d+)$/))) await viewText(+m[1]);
+    else if (h.startsWith("#/vocab")) await viewVocab();
+    else if (h === "#/settings") await viewSettings();
+    else location.hash = "#/";
+  } catch (e) {
+    view.replaceChildren(errorCard(e));
+  }
+}
+window.addEventListener("hashchange", route);
+
+// ------------------------------------------------------------------ library
+async function viewLibrary() {
+  const [texts, stats] = await Promise.all([api("/api/texts"), api("/api/stats")]);
+  let lang = pref.get("lib.lang");
+  const list = el("div");
+  const seg = el("div", { class: "seg" });
+  for (const [k, label] of [["", "All"], ["ru", "Russian"], ["fi", "Finnish"]]) {
+    seg.append(el("button", { class: lang === k ? "on" : "", onclick: (e) => {
+      lang = k; pref.set("lib.lang", k);
+      seg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === e.currentTarget));
+      draw();
+    } }, label));
+  }
+  const strip = el("div", { class: "stats-strip" });
+  for (const [k, name] of Object.entries(LANGS)) {
+    const s = stats[k] || { total: 0, by_status: {}, by_cefr: {} };
+    strip.append(el("div", { class: "stat" },
+      el("div", { class: "muted small" }, name),
+      el("div", { class: "n" }, s.total, el("span", { class: "muted small" }, " words")),
+      el("div", { class: "muted small" }, `${s.texts || 0} texts · ${s.phrases || 0} phrases · ${s.by_status.known || 0} known`)));
+  }
+  function draw() {
+    const shown = lang ? texts.filter((t) => t.lang === lang) : texts;
+    if (!shown.length) {
+      list.replaceChildren(el("div", { class: "empty" },
+        el("p", {}, texts.length ? "No texts in this language yet." : "Paste a passage in Russian or Finnish to start reading."),
+        el("a", { class: "btn primary", href: "#/new" }, "New text")));
+      return;
+    }
+    list.replaceChildren(el("div", { class: "cards" }, shown.map((t) =>
+      el("a", { class: "text-card", href: `#/text/${t.id}` },
+        el("span", { class: "badge lang-" + t.lang }, LANGS[t.lang]),
+        el("h3", { lang: t.lang }, t.title),
+        el("div", { class: "preview", lang: t.lang }, t.preview),
+        el("div", { class: "meta" },
+          [fmtDate(t.created_at), `${t.words} words looked up`, t.phrases ? `${t.phrases} phrases` : null,
+           t.translated ? (t.translated === t.sentences ? "translated" : `${t.translated}/${t.sentences} translated`) : null]
+            .filter(Boolean).join(" · "))))));
+  }
+  draw();
+  view.replaceChildren(
+    el("div", { class: "page-head" }, el("h1", {}, "Library"), el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, seg, el("a", { class: "btn primary", href: "#/new" }, "+ New text"))),
+    strip, list);
+}
+
+// ------------------------------------------------------------------ new text
+function viewNew() {
+  let lang = pref.get("new.lang", "ru");
+  const seg = el("div", { class: "seg" });
+  for (const [k, name] of Object.entries(LANGS)) {
+    seg.append(el("button", { type: "button", class: lang === k ? "on" : "", onclick: (e) => {
+      lang = k; pref.set("new.lang", k);
+      seg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === e.currentTarget));
+      body.setAttribute("lang", k);
+    } }, name));
+  }
+  const title = el("input", { type: "text", placeholder: "Optional — the first line is used otherwise" });
+  const src = el("input", { type: "url", placeholder: "https://…" });
+  const body = el("textarea", { rows: 16, lang, required: true, placeholder: "Paste the text you want to read…" });
+  const submit = el("button", { class: "btn primary", type: "submit" }, "Start reading");
+  const form = el("form", { class: "form-card", onsubmit: async (e) => {
+    e.preventDefault();
+    submit.disabled = true;
+    try {
+      const r = await api("/api/texts", { method: "POST", body: { lang, title: title.value, source_url: src.value, body: body.value } });
+      location.hash = `#/text/${r.id}`;
+    } catch (err) { toast(err.message, "error"); submit.disabled = false; }
+  } },
+    el("label", { class: "field" }, el("span", {}, "Language"), seg),
+    el("div", { class: "form-row" },
+      el("label", { class: "field" }, el("span", {}, "Title"), title),
+      el("label", { class: "field" }, el("span", {}, "Source"), src)),
+    el("label", { class: "field" }, el("span", {}, "Text"), body),
+    submit);
+  view.replaceChildren(el("div", { class: "page-head" }, el("h1", {}, "New text")), form);
+  body.focus();
+}
+
+// ------------------------------------------------------------------ reader
+let R = null; // reader state
+
+async function viewText(id) {
+  const t = await api(`/api/texts/${id}`);
+  R = {
+    t, parallel: pref.get("parallel") === "1", active: null,
+    occ: new Map(t.occurrences.map((o) => [o.start + ":" + o.end, o])),
+    tokens: t.sentences.flatMap((s) => s.tokens),
+  };
+  const trBtn = el("button", { class: "btn", id: "tr-btn", onclick: translatePassage });
+  const parBtn = el("button", { class: "btn" + (R.parallel ? " on" : ""), onclick: () => {
+    R.parallel = !R.parallel; pref.set("parallel", R.parallel ? "1" : "0");
+    parBtn.classList.toggle("on", R.parallel); renderText();
+  } }, "Side by side");
+  const delBtn = el("button", { class: "btn danger", onclick: async () => {
+    if (!confirm(`Delete “${t.title}”? Saved words and phrases stay in your vocabulary.`)) return;
+    await api(`/api/texts/${t.id}`, { method: "DELETE" });
+    location.hash = "#/";
+  } }, "Delete");
+  const article = el("article", { class: "text", id: "text", lang: t.lang });
+  const panel = el("aside", { class: "panel", id: "panel" });
+  view.replaceChildren(el("div", { class: "reader" },
+    el("div", { class: "reader-head" },
+      el("div", { class: "rh-title" },
+        el("span", { class: "badge lang-" + t.lang }, LANGS[t.lang]),
+        el("h1", { lang: t.lang }, t.title),
+        t.source_url ? el("a", { href: t.source_url, target: "_blank", rel: "noopener noreferrer", class: "small" }, "source ↗") : null),
+      el("div", { class: "rh-actions" }, trBtn, parBtn, delBtn)),
+    el("div", { class: "reader-body" }, article, panel)));
+  updateTranslateBtn();
+  renderText();
+  renderPanelIdle();
+  article.addEventListener("click", onWordClick);
+  article.addEventListener("mouseup", onSelect);
+  article.addEventListener("touchend", onSelect);
+  article.addEventListener("keyup", onSelect);
+}
+
+function updateTranslateBtn() {
+  const b = $("#tr-btn");
+  if (!b || !R) return;
+  const n = R.t.sentences.length, done = R.t.sentences.filter((s) => s.translation != null).length;
+  b.disabled = done === n;
+  b.textContent = done === n ? "Passage translated" : done ? `Translate rest (${n - done})` : "Translate passage";
+}
+
+async function translatePassage() {
+  const b = $("#tr-btn");
+  b.disabled = true; b.textContent = "Translating…";
+  try {
+    await translateSentences(null);
+    if (!R.parallel) { R.parallel = true; pref.set("parallel", "1"); renderText(); }
+    view.querySelectorAll(".rh-actions .btn")[1]?.classList.add("on");
+  } catch (err) { toast(err.message, "error"); }
+  updateTranslateBtn();
+}
+
+async function translateSentences(ids) {
+  const id = R.t.id;
+  const r = await api(`/api/texts/${id}/translate`, { method: "POST", body: { sentence_ids: ids } });
+  if (!R || R.t.id !== id) return;
+  const m = new Map(r.sentences.map((s) => [s.id, s.translation]));
+  for (const s of R.t.sentences) s.translation = m.get(s.id) ?? s.translation;
+  updateTranslateBtn();
+  if (R.parallel) renderText();
+}
+
+function gapSpan(s, e) { return el("span", { class: "g", "data-off": s }, R.t.body.slice(s, e)); }
+function sentenceNode(sent) {
+  const span = el("span", { class: "sent", "data-id": sent.id });
+  let p = sent.start;
+  for (const [s, e] of sent.tokens) {
+    if (s > p) span.append(gapSpan(p, s));
+    span.append(el("span", { class: "w", "data-s": s, "data-e": e, "data-off": s }, R.t.body.slice(s, e)));
+    p = e;
+  }
+  if (p < sent.end) span.append(gapSpan(p, sent.end));
+  return span;
+}
+
+function renderText() {
+  const a = $("#text");
+  if (!a) return;
+  const { body, sentences } = R.t;
+  a.classList.toggle("parallel", R.parallel);
+  a.replaceChildren();
+  if (R.parallel) {
+    for (const s of sentences) {
+      a.append(el("div", { class: "row" },
+        el("div", { class: "orig" }, sentenceNode(s)),
+        el("div", { class: "tr" + (s.translation ? "" : " missing"), lang: "" }, s.translation || "—")));
+    }
+  } else {
+    const flow = el("div", { class: "flow" });
+    let p = 0;
+    for (const s of sentences) {
+      if (s.start > p) flow.append(gapSpan(p, s.start));
+      flow.append(sentenceNode(s));
+      p = s.end;
+    }
+    if (p < body.length) flow.append(gapSpan(p, body.length));
+    a.append(flow);
+  }
+  applyMarks();
+}
+
+function applyMarks() {
+  if (!R) return;
+  const { body, surfaces, phrases } = R.t;
+  for (const w of document.querySelectorAll("#text .w")) {
+    const s = +w.dataset.s, e = +w.dataset.e;
+    const o = R.occ.get(s + ":" + e);
+    const sf = surfaces[body.slice(s, e).toLowerCase()];
+    const st = o ? o.status : sf ? sf.status : null;
+    w.className = "w" + (st ? " st-" + st : "")
+      + (phrases.some((p) => s >= p.start && e <= p.end) ? " ph" : "")
+      + (R.active && R.active.s === s && R.active.e === e ? " active" : "");
+    w.title = sf ? `${sf.lemma} — ${sf.gloss || ""}` : "";
+  }
+}
+
+function panelShow(node) {
+  const p = $("#panel");
+  if (!p) return;
+  p.classList.add("open");
+  p.replaceChildren(node);
+  p.scrollTop = 0;
+}
+
+function closeSheet() {
+  R.active = null; applyMarks(); renderPanelIdle();
+}
+
+function renderPanelIdle() {
+  const p = $("#panel");
+  if (!p) return;
+  p.classList.remove("open");
+  const help = el("div", { class: "card help" },
+    el("h2", {}, "How to read"),
+    el("p", {}, "Click a word to see its dictionary form, meaning in context and CEFR level. It is saved to your vocabulary."),
+    el("p", {}, "Select several words to translate them as a phrase."),
+    el("div", { class: "legend" },
+      el("span", {}, el("span", { class: "sw", style: "background:var(--new-bg)" }), "new"),
+      el("span", {}, el("span", { class: "sw", style: "background:var(--learning-bg)" }), "learning"),
+      el("span", {}, el("span", { class: "sw", style: "border-bottom:2px solid var(--known-line)" }), "known"),
+      el("span", {}, el("span", { class: "sw", style: "box-shadow:inset 0 -2px 0 var(--phrase-line)" }), "saved phrase")));
+  const phrases = R.t.phrases;
+  const list = el("div", { class: "card" }, el("h2", {}, `Phrases in this text (${phrases.length})`),
+    phrases.length
+      ? el("ul", { class: "phrase-list" }, phrases.map((ph) => el("li", { onclick: () => renderPhraseCard(ph) },
+          el("div", { class: "p-src", lang: R.t.lang }, ph.span), el("div", { class: "p-tr" }, ph.translation))))
+      : el("div", { class: "muted small" }, "None yet."));
+  p.replaceChildren(help, list);
+}
+
+function sheetClose() {
+  return el("button", { class: "icon close-sheet", title: "Close", onclick: closeSheet }, "✕");
+}
+
+function onWordClick(ev) {
+  const w = ev.target.closest(".w");
+  if (!w) return;
+  const sel = getSelection();
+  if (sel && !sel.isCollapsed && sel.toString().trim().length > 1) return;
+  lookupWord(+w.dataset.s, +w.dataset.e);
+}
+
+async function lookupWord(s, e, refresh = false) {
+  R.active = { s, e };
+  applyMarks();
+  const surface = R.t.body.slice(s, e);
+  panelShow(el("div", { class: "card" }, el("div", { class: "surface", lang: R.t.lang }, surface), el("div", { class: "spinner" }, "Looking up…")));
+  try {
+    const tid = R.t.id;
+    const r = await api("/api/lookup", { method: "POST", body: { text_id: tid, start: s, end: e, refresh } });
+    if (!R || R.t.id !== tid || !R.active || R.active.s !== s || R.active.e !== e) return; // superseded
+    const L = r.lemma;
+    R.occ.set(s + ":" + e, { start: s, end: e, lemma_id: L.id, status: L.status, surface });
+    R.t.surfaces[surface.toLowerCase()] = { lemma_id: L.id, lemma: L.stressed || L.lemma, status: L.status, gloss: L.gloss };
+    applyMarks();
+    renderWordCard(r);
+  } catch (err) {
+    if (R && R.active && R.active.s === s) panelShow(errorCard(err));
+  }
+}
+
+function renderWordCard(r) {
+  const a = r.analysis, L = r.lemma;
+  panelShow(el("div", { class: "card word-card" },
+    el("div", { class: "wc-top" },
+      el("div", { class: "surface", lang: R.t.lang }, r.surface),
+      el("div", {},
+        el("button", { class: "icon", title: "Analyse again without the cache", onclick: () => lookupWord(R.active.s, R.active.e, true) }, "↻"),
+        sheetClose())),
+    el("div", { class: "lemma-line" },
+      el("span", { class: "lemma", lang: R.t.lang }, L.stressed || L.lemma),
+      el("span", { class: "pos" }, L.pos),
+      L.cefr ? el("span", { class: "cefr cefr-" + L.cefr[0], title: "CEFR · " + (L.cefr_source || "") }, L.cefr) : null),
+    el("div", { class: "gloss" }, a.gloss),
+    a.morphology ? el("div", { class: "morph" }, a.morphology) : null,
+    a.compound_parts.length ? el("div", { class: "kv" }, el("span", { class: "k" }, "Compound"), a.compound_parts.join(" + ")) : null,
+    a.other_meanings.length ? el("div", { class: "kv" }, el("span", { class: "k" }, "Also"), a.other_meanings.join("; ")) : null,
+    a.notes ? el("div", { class: "notes" }, a.notes) : null,
+    statusButtons(L),
+    sentenceBlock(r.sentence),
+    el("div", { class: "card-foot" },
+      el("a", { href: "#/vocab?q=" + encodeURIComponent(L.lemma) + "&lang=" + R.t.lang }, "In vocabulary →"),
+      el("button", { class: "link danger", onclick: () => forgetLemma(L) }, "Remove word"))));
+}
+
+function statusButtons(L) {
+  const wrap = el("div", { class: "seg status-seg" });
+  for (const st of Object.keys(STATUS_LABEL)) {
+    wrap.append(el("button", { class: `st-btn st-${st}` + (L.status === st ? " on" : ""), onclick: async () => {
+      try {
+        await setStatus(L.id, st);
+        L.status = st;
+        wrap.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.classList.contains("st-" + st)));
+      } catch (err) { toast(err.message, "error"); }
+    } }, STATUS_LABEL[st]));
+  }
+  return wrap;
+}
+
+async function setStatus(id, st) {
+  await api(`/api/vocab/${id}`, { method: "PATCH", body: { status: st } });
+  if (R) {
+    for (const o of R.occ.values()) if (o.lemma_id === id) o.status = st;
+    for (const v of Object.values(R.t.surfaces)) if (v.lemma_id === id) v.status = st;
+    applyMarks();
+  }
+}
+
+function sentenceBlock(sent) {
+  const box = el("div", { class: "sent-box" }, el("div", { class: "k" }, "Sentence"));
+  const tr = R.t.sentences.find((x) => x.id === sent.id)?.translation ?? sent.translation;
+  if (tr) box.append(el("div", { class: "sent-tr" }, tr));
+  else {
+    const b = el("button", { class: "btn", style: "margin-top:6px", onclick: async () => {
+      b.disabled = true; b.textContent = "Translating…";
+      try {
+        await translateSentences([sent.id]);
+        b.replaceWith(el("div", { class: "sent-tr" }, R.t.sentences.find((x) => x.id === sent.id)?.translation || ""));
+      } catch (err) { toast(err.message, "error"); b.disabled = false; b.textContent = "Translate sentence"; }
+    } }, "Translate sentence");
+    box.append(b);
+  }
+  return box;
+}
+
+async function forgetLemma(L) {
+  if (!confirm(`Remove “${L.lemma}” and all its saved examples from your vocabulary?`)) return;
+  await api(`/api/vocab/${L.id}`, { method: "DELETE" });
+  for (const [k, o] of R.occ) if (o.lemma_id === L.id) R.occ.delete(k);
+  for (const [k, v] of Object.entries(R.t.surfaces)) if (v.lemma_id === L.id) delete R.t.surfaces[k];
+  R.active = null;
+  applyMarks();
+  renderPanelIdle();
+}
+
+// phrase selection -------------------------------------------------------
+let selBtn = null;
+function hideSelBtn() { if (selBtn) { selBtn.remove(); selBtn = null; } }
+
+function textNodeBound(node, last) {
+  const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT,
+    { acceptNode: (n) => (n.parentElement?.dataset.off != null ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP) });
+  if (node.nodeType === 3) return node.parentElement?.dataset.off != null ? node : null;
+  let n = walker.nextNode(), found = n;
+  if (last) while (n) { found = n; n = walker.nextNode(); }
+  return found;
+}
+
+function posOf(node, offset) {
+  if (node.nodeType === 3) {
+    const p = node.parentElement;
+    return p?.dataset.off != null ? +p.dataset.off + offset : null;
+  }
+  const kids = node.childNodes;
+  if (offset < kids.length) { const t = textNodeBound(kids[offset], false); if (t) return posOf(t, 0); }
+  if (offset > 0) { const t = textNodeBound(kids[offset - 1], true); if (t) return posOf(t, t.length); }
+  return null;
+}
+
+function onSelect() {
+  setTimeout(() => {
+    const sel = getSelection();
+    if (!R || !sel || sel.isCollapsed || !sel.rangeCount) return hideSelBtn();
+    const range = sel.getRangeAt(0);
+    const art = $("#text");
+    if (!art || !art.contains(range.commonAncestorContainer)) return hideSelBtn();
+    const s0 = posOf(range.startContainer, range.startOffset), e0 = posOf(range.endContainer, range.endOffset);
+    if (s0 == null || e0 == null || e0 <= s0) return hideSelBtn();
+    const first = R.tokens.find(([, b]) => b > s0);
+    const last = [...R.tokens].reverse().find(([a]) => a < e0);
+    if (!first || !last || first[0] >= last[1] || first === last) return hideSelBtn();
+    const s = first[0], e = last[1];
+    const rect = range.getBoundingClientRect();
+    hideSelBtn();
+    selBtn = el("button", { class: "btn primary sel-btn",
+      style: `top:${rect.bottom + window.scrollY + 8}px;left:${Math.max(8, Math.min(rect.left + window.scrollX, document.documentElement.clientWidth - 190))}px`,
+      onmousedown: (ev) => ev.preventDefault(),
+      onclick: () => translatePhrase(s, e) }, "Translate phrase");
+    document.body.append(selBtn);
+  }, 0);
+}
+document.addEventListener("mousedown", (e) => { if (selBtn && e.target !== selBtn) hideSelBtn(); });
+
+async function translatePhrase(s, e) {
+  hideSelBtn();
+  getSelection().removeAllRanges();
+  R.active = null;
+  applyMarks();
+  const span = R.t.body.slice(s, e);
+  panelShow(el("div", { class: "card" }, el("div", { class: "k" }, "Phrase"), el("div", { class: "phrase-src", lang: R.t.lang }, span), el("div", { class: "spinner" }, "Translating…")));
+  try {
+    const p = await api("/api/phrases", { method: "POST", body: { text_id: R.t.id, start: s, end: e } });
+    R.t.phrases = R.t.phrases.filter((x) => x.id !== p.id).concat(p).sort((a, b) => a.start - b.start);
+    applyMarks();
+    renderPhraseCard(p);
+  } catch (err) { panelShow(errorCard(err)); }
+}
+
+function renderPhraseCard(p) {
+  panelShow(el("div", { class: "card phrase-card" },
+    el("div", { class: "wc-top" }, el("div", { class: "k" }, "Phrase"), sheetClose()),
+    el("div", { class: "phrase-src", lang: R.t.lang }, p.span),
+    el("div", { class: "gloss" }, p.translation),
+    p.literal ? el("div", { class: "kv" }, el("span", { class: "k" }, "Literally"), p.literal) : null,
+    p.notes ? el("div", { class: "notes" }, p.notes) : null,
+    el("div", { class: "card-foot" },
+      el("button", { class: "link", onclick: renderPanelIdle }, "← All phrases"),
+      el("button", { class: "link danger", onclick: async () => {
+        await api(`/api/phrases/${p.id}`, { method: "DELETE" });
+        R.t.phrases = R.t.phrases.filter((x) => x.id !== p.id);
+        applyMarks(); renderPanelIdle();
+      } }, "Delete phrase"))));
+}
+
+// ------------------------------------------------------------------ vocabulary
+async function viewVocab() {
+  const params = new URLSearchParams(location.hash.split("?")[1] || "");
+  const st = { tab: params.get("tab") || "words", lang: params.get("lang") ?? pref.get("vocab.lang"), status: "", cefr: "", q: params.get("q") || "" };
+  const stats = await api("/api/stats");
+  const results = el("div");
+  const statsBox = el("div", { class: "stats-strip" });
+
+  function drawStats() {
+    statsBox.replaceChildren();
+    for (const [k, name] of Object.entries(LANGS)) {
+      if (st.lang && st.lang !== k) continue;
+      const s = stats[k] || { total: 0, by_cefr: {}, by_status: {} };
+      statsBox.append(el("div", { class: "stat" },
+        el("div", { class: "muted small" }, name),
+        el("div", { class: "n" }, s.total, el("span", { class: "muted small" }, " words")),
+        el("div", { class: "cefr-bar" }, [...CEFR, "?"].filter((c) => s.by_cefr[c]).map((c) =>
+          el("span", {}, c === "?" ? "–" : el("b", { class: "cefr-" + c[0] }, c), " ", s.by_cefr[c])))));
+    }
+  }
+
+  const sel = (opts, value, onchange) => el("select", { onchange }, opts.map(([v, l]) => el("option", { value: v, selected: v === value }, l)));
+  const langSel = sel([["", "All languages"], ...Object.entries(LANGS)], st.lang, (e) => { st.lang = e.target.value; pref.set("vocab.lang", st.lang); drawStats(); load(); });
+  const statusSel = sel([["", "Any status"], ...Object.entries(STATUS_LABEL)], "", (e) => { st.status = e.target.value; load(); });
+  const cefrSel = sel([["", "Any level"], ...CEFR.map((c) => [c, c]), ["none", "No level"]], "", (e) => { st.cefr = e.target.value; load(); });
+  let timer;
+  const search = el("input", { type: "search", placeholder: "Search word, form or meaning", value: st.q, oninput: (e) => {
+    clearTimeout(timer); timer = setTimeout(() => { st.q = e.target.value.trim(); load(); }, 250);
+  } });
+  const exportLink = el("a", { class: "btn" }, "Export CSV");
+  const tabs = el("div", { class: "seg" });
+  for (const [k, l] of [["words", "Words"], ["phrases", "Phrases"]]) {
+    tabs.append(el("button", { class: st.tab === k ? "on" : "", onclick: (e) => {
+      st.tab = k; tabs.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === e.currentTarget));
+      statusSel.style.display = cefrSel.style.display = exportLink.style.display = k === "words" ? "" : "none";
+      load();
+    } }, l));
+  }
+
+  async function load() {
+    const qs = new URLSearchParams();
+    if (st.lang) qs.set("lang", st.lang);
+    if (st.q) qs.set("q", st.q);
+    results.replaceChildren(el("div", { class: "loading" }, "Loading…"));
+    try {
+      if (st.tab === "phrases") return drawPhrases(await api("/api/phrases?" + qs));
+      if (st.status) qs.set("status", st.status);
+      if (st.cefr) qs.set("cefr", st.cefr);
+      const ex = new URLSearchParams(qs); ex.delete("q");
+      if (TOKEN) ex.set("token", TOKEN);
+      exportLink.href = "/api/export.csv?" + ex;
+      drawWords(await api("/api/vocab?" + qs));
+    } catch (err) { results.replaceChildren(errorCard(err)); }
+  }
+
+  function drawWords(rows) {
+    if (!rows.length) {
+      results.replaceChildren(el("div", { class: "empty" }, el("p", {}, st.q || st.status || st.cefr ? "No words match these filters." : "No words yet. Click words while reading to collect them.")));
+      return;
+    }
+    const tbody = el("tbody");
+    for (const w of rows) {
+      const tr = el("tr", { class: "word-row" },
+        el("td", {}, el("div", { class: "lemma-cell", lang: w.lang }, w.stressed || w.lemma), el("div", { class: "muted small" }, [LANGS[w.lang], w.pos].filter(Boolean).join(" · "))),
+        el("td", {}, el("div", {}, w.gloss || "—"), w.example ? el("div", { class: "ex", lang: w.lang }, highlight(w.example, w.example_surface)) : null),
+        el("td", {}, sel([["", "—"], ...CEFR.map((c) => [c, c])], w.cefr || "", async (e) => {
+          try { await api(`/api/vocab/${w.id}`, { method: "PATCH", body: { cefr: e.target.value } }); toast("Level updated"); } catch (err) { toast(err.message, "error"); }
+        })),
+        el("td", {}, sel(Object.entries(STATUS_LABEL), w.status, async (e) => {
+          try { await setStatus(w.id, e.target.value); } catch (err) { toast(err.message, "error"); }
+        })),
+        el("td", { class: "muted" }, w.occurrences),
+        el("td", {}, el("button", { class: "icon", title: "Delete", onclick: async (e) => {
+          e.stopPropagation();
+          if (!confirm(`Delete “${w.lemma}”?`)) return;
+          await api(`/api/vocab/${w.id}`, { method: "DELETE" });
+          tr.nextElementSibling?.classList.contains("detail") && tr.nextElementSibling.remove();
+          tr.remove();
+        } }, "✕")));
+      tr.addEventListener("click", async (e) => {
+        if (e.target.closest("select,button,a")) return;
+        const next = tr.nextElementSibling;
+        if (next?.classList.contains("detail")) return next.remove();
+        const cell = el("td", { colspan: 6 }, el("div", { class: "spinner" }, "Loading…"));
+        tr.after(el("tr", { class: "detail" }, cell));
+        try {
+          const d = await api(`/api/vocab/${w.id}`);
+          cell.replaceChildren(
+            d.other_meanings.length ? el("div", { class: "kv" }, el("b", {}, "Also: "), d.other_meanings.join("; ")) : null,
+            d.compound_parts.length ? el("div", { class: "kv" }, el("b", {}, "Compound: "), d.compound_parts.join(" + ")) : null,
+            d.notes ? el("div", { class: "kv" }, el("b", {}, "Notes: "), d.notes) : null,
+            d.cefr ? el("div", { class: "muted small" }, `CEFR ${d.cefr} (${d.cefr_source || "unknown source"})`) : null,
+            el("div", { style: "margin-top:8px" }, d.occurrences.map((o) => el("div", { class: "occ" },
+              el("div", { class: "s", lang: d.lang }, highlight(o.sentence_text, o.surface)),
+              o.sentence_translation ? el("div", { class: "muted small" }, o.sentence_translation) : null,
+              el("div", { class: "muted small" },
+                [o.surface, o.morphology, o.gloss_in_context].filter(Boolean).join(" · "),
+                o.text_id ? [" · ", el("a", { href: `#/text/${o.text_id}` }, o.text_title || "open text")] : " · text deleted")))));
+        } catch (err) { cell.replaceChildren(errorCard(err)); }
+      });
+      tbody.append(tr);
+    }
+    results.replaceChildren(
+      el("div", { class: "muted small", style: "margin-bottom:8px" }, `${rows.length} words`),
+      el("div", { class: "table-wrap" }, el("table", {},
+        el("thead", {}, el("tr", {}, ["Word", "Meaning & first example", "CEFR", "Status", "Seen", ""].map((h) => el("th", {}, h)))),
+        tbody)));
+  }
+
+  function drawPhrases(rows) {
+    if (!rows.length) {
+      results.replaceChildren(el("div", { class: "empty" }, el("p", {}, "No phrases yet. Select several words while reading to translate them.")));
+      return;
+    }
+    results.replaceChildren(el("div", { class: "table-wrap" }, el("table", {},
+      el("thead", {}, el("tr", {}, ["Phrase", "Translation", "Notes", "Text", ""].map((h) => el("th", {}, h)))),
+      el("tbody", {}, rows.map((p) => {
+        const tr = el("tr", {},
+          el("td", {}, el("div", { class: "lemma-cell", lang: p.lang }, p.span), el("div", { class: "muted small" }, LANGS[p.lang])),
+          el("td", {}, p.translation, p.literal ? el("div", { class: "muted small" }, "Lit. " + p.literal) : null),
+          el("td", { class: "small" }, p.notes || ""),
+          el("td", { class: "small" }, p.text_id ? el("a", { href: `#/text/${p.text_id}` }, p.text_title) : el("span", { class: "muted" }, "deleted")),
+          el("td", {}, el("button", { class: "icon", title: "Delete", onclick: async () => {
+            if (!confirm("Delete this phrase?")) return;
+            await api(`/api/phrases/${p.id}`, { method: "DELETE" }); tr.remove();
+          } }, "✕")));
+        return tr;
+      })))));
+  }
+
+  view.replaceChildren(
+    el("div", { class: "page-head" }, el("h1", {}, "Vocabulary"), tabs),
+    statsBox,
+    el("div", { class: "filters" }, langSel, statusSel, cefrSel, search, exportLink),
+    results);
+  drawStats();
+  load();
+}
+
+// ------------------------------------------------------------------ settings
+const PRESETS = [
+  { label: "Claude Haiku 5.5", sub: "Cheapest Claude · recommended", v: { llm_provider: "anthropic", llm_model: "claude-haiku-5-5", llm_base_url: "", llm_effort: "low" } },
+  { label: "Claude Sonnet 5.5", sub: "Stronger, ~20× Haiku's price", v: { llm_provider: "anthropic", llm_model: "claude-sonnet-5-5", llm_base_url: "", llm_effort: "low" } },
+  { label: "Ollama", sub: "Local and free", v: { llm_provider: "openai", llm_model: "gemma3:12b", llm_base_url: "http://host.docker.internal:11434/v1", llm_effort: "" } },
+  { label: "OpenRouter", sub: "Many hosted models", v: { llm_provider: "openai", llm_model: "", llm_base_url: "https://openrouter.ai/api/v1", llm_effort: "" } },
+  { label: "Other OpenAI-compatible", sub: "LM Studio, vLLM, OpenAI…", v: { llm_provider: "openai", llm_model: "", llm_base_url: "", llm_effort: "" } },
+];
+
+async function viewSettings() {
+  const data = await api("/api/settings");
+  let S = data.settings;
+  const clear = new Set();
+
+  const provider = el("select", {}, [["anthropic", "Claude API (Anthropic)"], ["openai", "OpenAI-compatible (Ollama, OpenRouter, LM Studio, vLLM, OpenAI…)"], ["none", "Disabled"]]
+    .map(([v, l]) => el("option", { value: v }, l)));
+  const model = el("input", { type: "text", list: "model-list", autocomplete: "off" });
+  const modelList = el("datalist", { id: "model-list" }, ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5", "gemma3:12b", "qwen3:14b"].map((m) => el("option", { value: m })));
+  const baseUrl = el("input", { type: "url", autocomplete: "off" });
+  const baseHint = el("small");
+  const apiKey = el("input", { type: "password", autocomplete: "off" });
+  const keyHint = el("small");
+  const clearKey = el("button", { type: "button", class: "btn", onclick: () => { clear.add("llm_api_key"); apiKey.value = ""; apiKey.placeholder = "Will be cleared on save"; } }, "Clear");
+  const effort = el("select", {}, [["", "Model default"], ["low", "low — cheapest, fine for lookups"], ["medium", "medium"], ["high", "high"]].map(([v, l]) => el("option", { value: v }, l)));
+  const effortField = el("label", { class: "field" }, el("span", {}, "Effort"), effort,
+    el("small", {}, "How much the model thinks before answering. Thinking is billed as output, so low keeps lookups cheap."));
+  const timeout = el("input", { type: "text", inputmode: "numeric" });
+  const target = el("input", { type: "text", list: "target-list" });
+  const targetList = el("datalist", { id: "target-list" }, ["English", "Finnish", "Swedish", "German", "Chinese", "Russian"].map((m) => el("option", { value: m })));
+  const passLLM = el("input", { type: "radio", name: "pp", value: "llm" });
+  const passDeepL = el("input", { type: "radio", name: "pp", value: "deepl" });
+  const deeplKey = el("input", { type: "password", autocomplete: "off" });
+  const deeplHint = el("small");
+  const clearDeepl = el("button", { type: "button", class: "btn", onclick: () => { clear.add("deepl_api_key"); deeplKey.value = ""; deeplKey.placeholder = "Will be cleared on save"; } }, "Clear");
+  const deeplField = el("label", { class: "field" }, el("span", {}, "DeepL API key"), el("div", { class: "key-row" }, deeplKey, clearDeepl), deeplHint);
+  const presets = el("div", { class: "presets" });
+  const result = el("div");
+  const baseField = el("label", { class: "field" }, el("span", {}, "Base URL"), baseUrl, baseHint);
+
+  function keyText(k) {
+    if (!k.set) return "Not set";
+    return `Saved key ${k.hint}` + (k.source === "environment" ? " (from environment variable)" : "");
+  }
+
+  function fill() {
+    provider.value = S.llm_provider; model.value = S.llm_model; baseUrl.value = S.llm_base_url;
+    effort.value = S.llm_effort; timeout.value = S.llm_timeout; target.value = S.target_language;
+    passLLM.checked = S.passage_provider !== "deepl"; passDeepL.checked = S.passage_provider === "deepl";
+    apiKey.value = ""; deeplKey.value = ""; clear.clear();
+    apiKey.placeholder = keyText(S.llm_api_key); deeplKey.placeholder = keyText(S.deepl_api_key);
+    keyHint.textContent = S.llm_api_key.source === "environment" ? "A key saved here overrides the environment variable." : "Leave blank to keep the saved key.";
+    deeplHint.textContent = "Free-tier keys end in :fx and are routed to api-free.deepl.com automatically.";
+    sync();
+  }
+
+  function sync() {
+    const p = provider.value;
+    effortField.style.display = p === "anthropic" ? "" : "none";
+    baseField.style.display = p === "none" ? "none" : "";
+    baseUrl.placeholder = p === "anthropic" ? "https://api.anthropic.com (default)" : "http://host.docker.internal:11434/v1";
+    baseHint.textContent = p === "anthropic"
+      ? "Leave blank unless you route through a proxy or gateway."
+      : "The endpoint that ends in /v1. From inside Docker, reach a service on the host at host.docker.internal.";
+    apiKey.closest(".field").style.display = p === "none" ? "none" : "";
+    model.closest(".field").style.display = p === "none" ? "none" : "";
+    deeplField.style.display = passDeepL.checked ? "" : "none";
+    presets.querySelectorAll(".preset").forEach((b, i) => {
+      const v = PRESETS[i].v;
+      b.classList.toggle("on", v.llm_provider === p && v.llm_base_url === baseUrl.value && (!v.llm_model || v.llm_model === model.value));
+    });
+  }
+  for (const x of [provider, baseUrl, model, passLLM, passDeepL]) x.addEventListener("input", sync);
+  for (const x of [provider, passLLM, passDeepL]) x.addEventListener("change", sync);
+
+  PRESETS.forEach((pr) => presets.append(el("button", { type: "button", class: "preset", onclick: () => {
+    provider.value = pr.v.llm_provider; model.value = pr.v.llm_model; baseUrl.value = pr.v.llm_base_url; effort.value = pr.v.llm_effort;
+    sync();
+    (pr.v.llm_model ? apiKey : model).focus();
+  } }, el("b", {}, pr.label), el("small", {}, pr.sub))));
+
+  async function save(quiet) {
+    const values = {
+      llm_provider: provider.value, llm_model: model.value, llm_base_url: baseUrl.value, llm_effort: effort.value,
+      llm_timeout: timeout.value, target_language: target.value, passage_provider: passDeepL.checked ? "deepl" : "llm",
+    };
+    if (apiKey.value.trim()) values.llm_api_key = apiKey.value.trim();
+    if (deeplKey.value.trim()) values.deepl_api_key = deeplKey.value.trim();
+    const r = await api("/api/settings", { method: "PUT", body: { values, clear: [...clear] } });
+    S = r.settings;
+    fill();
+    if (!quiet) toast("Settings saved");
+  }
+
+  const saveBtn = el("button", { class: "btn primary", type: "submit" }, "Save");
+  const testBtn = el("button", { class: "btn", type: "button", onclick: async () => {
+    testBtn.disabled = true; testBtn.textContent = "Testing…";
+    result.replaceChildren();
+    try {
+      await save(true);
+      const r = await api("/api/settings/test", { method: "POST" });
+      if (r.ok) {
+        const w = r.word;
+        result.replaceChildren(el("div", { class: "test-result ok" },
+          el("b", {}, "✓ Working"), ` · ${r.model} · ${(r.elapsed_ms / 1000).toFixed(1)} s`,
+          el("div", { style: "margin-top:6px" }, "книгу → ", el("b", { lang: "ru" }, w.stressed || w.lemma), ` (${w.pos}, ${w.morphology}) “${w.gloss}” `, w.cefr ? el("span", { class: "cefr cefr-" + w.cefr[0] }, w.cefr) : null),
+          r.deepl ? el("div", {}, "DeepL: Hyvää huomenta! → ", r.deepl) : null));
+      } else {
+        result.replaceChildren(el("div", { class: "test-result fail" }, el("b", {}, "✗ Failed"), ` · ${r.provider} · ${r.model || "no model"}`, el("pre", {}, r.error)));
+      }
+    } catch (err) {
+      result.replaceChildren(el("div", { class: "test-result fail" }, el("b", {}, "✗ "), err.message));
+    }
+    testBtn.disabled = false; testBtn.textContent = "Save & test";
+  } }, "Save & test");
+
+  const form = el("form", { class: "form-card", style: "max-width:none", onsubmit: async (e) => {
+    e.preventDefault();
+    saveBtn.disabled = true;
+    try { await save(false); } catch (err) { toast(err.message, "error"); }
+    saveBtn.disabled = false;
+  } },
+    el("h2", {}, "Word and phrase analysis"),
+    el("p", { class: "muted small", style: "margin-top:-6px" }, "Used for clicked words, selected phrases and, unless DeepL is chosen below, whole passages. Every answer is cached, so switching backends later only affects new lookups."),
+    presets,
+    el("label", { class: "field" }, el("span", {}, "Backend"), provider),
+    el("label", { class: "field" }, el("span", {}, "Model"), model, modelList, el("small", {}, "Any model id your backend accepts.")),
+    baseField,
+    el("label", { class: "field" }, el("span", {}, "API key"), el("div", { class: "key-row" }, apiKey, clearKey), keyHint),
+    effortField,
+    el("label", { class: "field" }, el("span", {}, "Timeout (seconds)"), timeout),
+    el("hr", { class: "sep" }),
+    el("h2", {}, "Whole-passage translation"),
+    el("div", { class: "radio-row" },
+      el("label", {}, passLLM, "Same backend as above"),
+      el("label", {}, passDeepL, "DeepL (free tier: 500k characters a month)")),
+    deeplField,
+    el("hr", { class: "sep" }),
+    el("h2", {}, "Language"),
+    el("label", { class: "field" }, el("span", {}, "Translate into"), target, targetList, el("small", {}, "Glosses, notes and translations are written in this language.")),
+    el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, saveBtn, testBtn),
+    result);
+
+  const an = data.analysers;
+  const side = el("div", {},
+    el("div", { class: "card" },
+      el("h2", {}, "Offline analysers"),
+      el("p", { class: "muted small", style: "margin-top:-6px" }, "When available, their candidate dictionary forms are passed to the model as hints."),
+      ["ru", "fi"].map((k) => el("div", { class: "kv" },
+        el("span", { class: "dot " + (an[k].available ? "on" : "off") }),
+        el("b", {}, an[k].name), ` (${LANGS[k]}) — `, an[k].available ? "available" : el("span", { class: "muted" }, "not installed")))),
+    el("div", { class: "card" },
+      el("h2", {}, "Where keys are stored"),
+      el("p", { class: "muted small", style: "margin:0" }, "Keys saved here live in reader.db in your data volume and are never sent back to the browser. Environment variables (LLM_API_KEY, ANTHROPIC_API_KEY, DEEPL_API_KEY) are used when nothing is saved.")));
+
+  view.replaceChildren(el("div", { class: "page-head" }, el("h1", {}, "Settings")), el("div", { class: "settings-grid" }, form, side));
+  fill();
+}
+
+route();
+</script>
+</body>
+</html>

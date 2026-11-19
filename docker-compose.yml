@@ -1,0 +1,31 @@
+services:
+  language-reader:
+    # Published by .github/workflows/publish.yml. No `build:` here so the file
+    # works as a Portainer stack; add docker-compose.build.yml to build locally.
+    image: ghcr.io/cao-jacky/language-reader:latest
+    container_name: language-reader
+    restart: unless-stopped
+    ports:
+      - "8413:8080"
+    volumes:
+      # reader.db lives here: texts, vocabulary, settings, translation cache.
+      - ${DATA_PATH:?set DATA_PATH to a folder for reader.db}:/data
+    environment:
+      DATA_DIR: /data
+      PORT: "8080"
+      # Uncomment to require a token. The page prompts once and remembers it.
+      # AUTH_TOKEN: "change-me"
+      # Optional fallbacks; anything saved on the Settings page wins.
+      # ANTHROPIC_API_KEY: ""
+      # DEEPL_API_KEY: ""
+    # Lets the Settings page reach Ollama or LM Studio on the host as
+    # http://host.docker.internal:11434/v1 (needed on Linux, harmless elsewhere).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # user: "1000:1000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=4).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

@@ -1,0 +1,5 @@
+fastapi>=0.115
+uvicorn>=0.30
+anthropic>=2.10,<3
+pymorphy3>=2.0
+pymorphy3-dicts-ru>=2.4
