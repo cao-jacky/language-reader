@@ -22,7 +22,7 @@ your vocabulary builds up as you read.
   by side with the original.
 - **Phrase book.** Every phrase you translate from a selection goes into your
   phrase book, and after translating a passage you can ☆ any sentence to save
-  it with its translation. Browse it under Vocabulary → Phrase book.
+  it with its translation. It has its own page in the menu.
 - **Vocabulary.** Every looked-up word is stored once per dictionary form, with
   each sentence you met it in. Browse it as a grid of word cards in
   alphabetical sections (A–Ö for Finnish, А–Я for Russian) with a letter index,

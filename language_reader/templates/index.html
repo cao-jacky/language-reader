@@ -151,17 +151,34 @@ button.star.btn { font-size: .88rem; border: 1px solid var(--border); padding: 5
 .pb-card .pb-src { font: 1.05rem/1.45 var(--serif); }
 .pb-card .pb-tr { font-size: .95rem; }
 .pb-card .pb-meta { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: auto; padding-top: 6px; color: var(--muted); font-size: .8rem; }
-.w { cursor: pointer; border-radius: 3px; transition: background .1s; }
-.w:hover { background: var(--accent-soft); }
-.text.selecting .w:hover { background: none; }
-.text.selecting .w.st-new:hover { background: var(--new-bg); }
-.text.selecting .w.st-learning:hover { background: var(--learning-bg); }
-.text ::selection { background: color-mix(in srgb, var(--accent) 32%, transparent); }
-.w.st-new { background: var(--new-bg); }
-.w.st-learning { background: var(--learning-bg); }
+/* Word highlights. Each word's box is padded to the full line height, so
+   hovering or clicking anywhere in its line slot hits it (the text is set at
+   line-height 1.9, which otherwise leaves gaps above and below the letters).
+   The colours are clipped to the text itself: status as background-color,
+   hover/selection and the phrase underline as background-image layers on
+   top, so they show on coloured words too. box-decoration-break keeps a word
+   that wraps at a hyphen (linja-|auto) highlighted on both lines. */
+.w { cursor: pointer; border-radius: 3px; --hl: transparent; --phl: transparent;
+  padding: .31em 0;
+  background-image: linear-gradient(var(--hl), var(--hl)), linear-gradient(var(--phl), var(--phl));
+  background-size: 100% 100%, 100% 2px; background-position: 0 0, 0 100%; background-repeat: no-repeat;
+  background-clip: content-box;
+  -webkit-box-decoration-break: clone; box-decoration-break: clone;
+  transition: background-color .1s; }
+.w:hover { --hl: var(--accent-soft); }
+.text.selecting .w:hover { --hl: transparent; }
+.w.st-new { background-color: var(--new-bg); }
+.w.st-learning { background-color: var(--learning-bg); }
 .w.st-known { text-decoration: underline 1px var(--known-line); text-underline-offset: 4px; }
-.w.ph { box-shadow: inset 0 -2px 0 var(--phrase-line); }
-.w.active { outline: 2px solid var(--accent); outline-offset: 1px; }
+.w.ph { --phl: var(--phrase-line); }
+.w.active, .w.active:hover { --hl: color-mix(in srgb, var(--accent) 24%, transparent); }
+/* While dragging, whole words (and the spaces between them) light up instead
+   of the browser's character-by-character selection. */
+.text { --sel: color-mix(in srgb, var(--accent) 30%, transparent); }
+.text.selecting.has-live ::selection { background: transparent; }
+.w.sel-live, .text.selecting .w.sel-live:hover { --hl: var(--sel); }
+.g.sel-live { background: var(--sel); }
+.text ::selection { background: var(--sel); }
 .sent { border-radius: 4px; }
 .sel-btn { position: absolute; z-index: 30; box-shadow: var(--shadow); padding: 5px 11px; font-size: .88rem; }
 
@@ -315,6 +332,7 @@ hr.sep { border: 0; border-top: 1px solid var(--border); margin: 20px 0; }
       <a href="#/">Library</a>
       <a href="#/new">Paste text</a>
       <a href="#/vocab">Vocabulary</a>
+      <a href="#/phrases">Phrase book</a>
       <a href="#/settings">Settings</a>
     </nav>
   </div>
@@ -437,7 +455,9 @@ async function route() {
     if (h === "#/" || h === "#") await viewLibrary();
     else if (h === "#/new") viewNew();
     else if ((m = h.match(/^#\/text\/(\d+)$/))) await viewText(+m[1]);
+    else if (h.startsWith("#/vocab?") && new URLSearchParams(h.split("?")[1]).get("tab") === "phrases") location.hash = "#/phrases";
     else if (h.startsWith("#/vocab")) await viewVocab();
+    else if (h.startsWith("#/phrases")) await viewVocab({ phrasebook: true });
     else if (h === "#/settings") await viewSettings();
     else location.hash = "#/";
   } catch (e) {
@@ -745,6 +765,7 @@ function renderPanelIdle() {
       ? el("ul", { class: "phrase-list" }, phrases.map((ph) => el("li", { onclick: () => renderPhraseCard(ph) },
           el("div", { class: "p-src", lang: R.t.lang }, ph.kind === "sentence" ? "★ " : "", ph.span), el("div", { class: "p-tr" }, ph.translation))))
       : el("div", { class: "muted small" }, "None yet."));
+  list.append(el("div", { class: "small", style: "margin-top:8px" }, el("a", { href: "#/phrases" }, "Open the phrase book →")));
   p.replaceChildren(help, list);
 }
 
@@ -966,13 +987,55 @@ function showSelBtn(range, s, e) {
   selBtn.style.left = `${x + window.scrollX}px`;
 }
 
+// The whole words a selection would snap to: [start, end] offsets, or null.
+function snappedRange() {
+  const sel = getSelection(), art = $("#text");
+  if (!R || !art || !sel || sel.isCollapsed || !sel.rangeCount) return null;
+  const range = sel.getRangeAt(0);
+  if (!art.contains(range.commonAncestorContainer)) return null;
+  const s0 = posOf(range.startContainer, range.startOffset), e0 = posOf(range.endContainer, range.endOffset);
+  if (s0 == null || e0 == null || e0 <= s0) return null;
+  const first = R.tokens.find(([, b]) => b > s0);
+  const last = [...R.tokens].reverse().find(([a]) => a < e0);
+  return first && last && first[0] < last[1] ? [first[0], last[1]] : null;
+}
+
+function clearLive() {
+  document.querySelectorAll("#text .sel-live").forEach((x) => x.classList.remove("sel-live"));
+  $("#text")?.classList.remove("has-live");
+}
+
+// While the mouse is down, show the whole words the selection covers.
+let dragging = false, liveFrame = 0;
+function liveSelect() {
+  liveFrame = 0;
+  const art = $("#text");
+  if (!dragging || !art) return;
+  const r = snappedRange();
+  art.classList.toggle("has-live", !!r);
+  for (const x of art.querySelectorAll(".w, .g")) {
+    const off = +x.dataset.off, end = off + x.textContent.length;
+    // Words that overlap the range; gaps only when they lie between two such words.
+    const on = !!r && (x.classList.contains("w") ? off < r[1] && end > r[0] : off >= r[0] && end <= r[1]);
+    x.classList.toggle("sel-live", on);
+  }
+}
+
 document.addEventListener("mousedown", (e) => {
   if (selBtn && e.target !== selBtn) hideSelBtn();
   const art = e.target.closest?.("#text");
+  clearLive();
   // Suppress word hover boxes while dragging out a selection.
-  if (art && e.button === 0) art.classList.add("selecting");
+  if (art && e.button === 0) { art.classList.add("selecting"); dragging = true; }
 });
-document.addEventListener("mouseup", () => $("#text")?.classList.remove("selecting"));
+document.addEventListener("selectionchange", () => {
+  if (dragging && !liveFrame) liveFrame = requestAnimationFrame(liveSelect);
+});
+document.addEventListener("mouseup", () => {
+  dragging = false;
+  clearLive();
+  $("#text")?.classList.remove("selecting");
+});
 if (COARSE) {
   // Touch selections are adjusted with drag handles and fire no mouseup on the text.
   let t;
@@ -1013,10 +1076,10 @@ function renderPhraseCard(p) {
 }
 
 // ------------------------------------------------------------------ vocabulary
-async function viewVocab() {
+async function viewVocab({ phrasebook = false } = {}) {
   const params = new URLSearchParams(location.hash.split("?")[1] || "");
   const st = {
-    tab: params.get("tab") || "words", lang: params.get("lang") ?? pref.get("vocab.lang"), status: "", cefr: "", q: params.get("q") || "",
+    tab: phrasebook ? "phrases" : "words", lang: params.get("lang") ?? pref.get("vocab.lang"), status: "", cefr: "", q: params.get("q") || "",
     layout: pref.get("vocab.layout", "grid"), group: pref.get("vocab.group", "alpha"),
   };
   let lastRows = [];
@@ -1030,6 +1093,11 @@ async function viewVocab() {
       if (st.lang && st.lang !== k) continue;
       const name = langName(k);
       const s = stats[k] || { total: 0, by_cefr: {}, by_status: {} };
+      if (phrasebook) {
+        statsBox.append(el("div", { class: "stat" }, el("div", { class: "muted small" }, name),
+          el("div", { class: "n" }, s.phrases || 0, el("span", { class: "muted small" }, " entries"))));
+        continue;
+      }
       statsBox.append(el("div", { class: "stat" },
         el("div", { class: "muted small" }, name),
         el("div", { class: "n" }, s.total, el("span", { class: "muted small" }, " words")),
@@ -1063,14 +1131,8 @@ async function viewVocab() {
     statusSel.style.display = cefrSel.style.display = exportLink.style.display = layoutSeg.style.display = words ? "" : "none";
     groupSel.style.display = words && st.layout === "grid" ? "" : "none";
   }
-  const tabs = el("div", { class: "seg" });
-  for (const [k, l] of [["words", "Words"], ["phrases", "Phrase book"]]) {
-    tabs.append(el("button", { class: st.tab === k ? "on" : "", onclick: (e) => {
-      st.tab = k; tabs.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === e.currentTarget));
-      syncControls();
-      load();
-    } }, l));
-  }
+  const search_ph = phrasebook ? "Search phrases or translations" : "Search word, form or meaning";
+  search.placeholder = search_ph;
 
   async function load() {
     const qs = new URLSearchParams();
@@ -1263,7 +1325,8 @@ async function viewVocab() {
   }
 
   view.replaceChildren(
-    el("div", { class: "page-head" }, el("h1", {}, "Vocabulary"), tabs),
+    el("div", { class: "page-head" }, el("h1", {}, phrasebook ? "Phrase book" : "Vocabulary"),
+      phrasebook ? el("a", { class: "btn", href: "#/vocab" }, "Words →") : el("a", { class: "btn", href: "#/phrases" }, "Phrase book →")),
     statsBox,
     el("div", { class: "filters" }, langSel, statusSel, cefrSel, search, layoutSeg, groupSel, exportLink),
     results);
