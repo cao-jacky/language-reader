@@ -19,7 +19,7 @@ DEFAULTS = {
     "llm_model": "claude-haiku-5-5",
     # Stronger models on the same backend and key, offered as "ask a stronger
     # model" in the reader. Comma-separated.
-    "llm_extra_models": "claude-sonnet-5-5",
+    "llm_extra_models": "",
     # Per-model price overrides, JSON {model: {"in": usd_per_mtok, "out": ...}}.
     "llm_prices": "{}",
     "llm_base_url": "",
@@ -67,6 +67,10 @@ def load() -> dict[str, str]:
         if v is None or (v == "" and k not in ALLOW_EMPTY):
             v = _env(k) or default
         out[k] = v
+    # Until the user sets stronger models, offer Sonnet when the backend is
+    # Claude; other backends have no sensible default.
+    if "llm_extra_models" not in saved and not _env("llm_extra_models") and out["llm_provider"] == "anthropic":
+        out["llm_extra_models"] = "claude-sonnet-5-5"
     return out
 
 

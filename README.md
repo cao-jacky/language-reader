@@ -20,6 +20,10 @@ your vocabulary builds up as you read.
   differs, and a note on any idiom or construction.
 - **Translate a passage.** Sentences are translated in batches and shown side
   by side with the original.
+- **Listen.** 🔊 buttons read a selection, a word (as it appears and in its
+  dictionary form), a phrase or a sentence aloud with your device's own
+  voices (the browser's Web Speech API: no backend, no cost). Choose a voice
+  per language and the speed under Settings → Speech.
 - **Phrase book.** Every phrase you translate from a selection goes into your
   phrase book, and after translating a passage you can ☆ any sentence to save
   it with its translation. It has its own page in the menu.

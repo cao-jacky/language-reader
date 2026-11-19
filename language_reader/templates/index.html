@@ -98,6 +98,9 @@ div.field { margin-bottom: 14px; }
 @media (prefers-color-scheme: dark) { .badge.lang { color: hsl(var(--h) 65% 72%); } }
 .seg-wrap { flex-wrap: wrap; }
 .lang-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.voice-row { margin: 10px 0; }
+.voice-row > b { display: block; font-size: .88rem; margin-bottom: 4px; }
+.voice-row input[type=range] { width: 100%; }
 .lang-chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border); background: var(--surface-2);
   border-radius: 999px; padding: 3px 4px 3px 12px; }
 .lang-chip .code { color: var(--muted); font-size: .78rem; }
@@ -142,6 +145,16 @@ div.field { margin-bottom: 14px; }
 .text .row .tr { font: .98rem/1.6 var(--sans); color: var(--muted); padding-top: 4px; }
 .text .row .tr.missing > span { opacity: .5; }
 .text .row .tr { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+button.speak { border: 0; background: none; cursor: pointer; color: var(--muted); padding: 3px 5px; border-radius: 5px;
+  display: inline-flex; align-items: center; gap: 5px; vertical-align: middle; line-height: 1; font: inherit; font-size: .85rem; }
+button.speak:hover { color: var(--accent); background: var(--accent-soft); }
+button.speak.speaking { color: var(--accent); background: var(--accent-soft); animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .55; } }
+button.speak.btn { border: 1px solid var(--border); background: var(--surface); color: var(--text); padding: 6px 11px; }
+button.speak.btn:hover { background: var(--surface-2); }
+.surface button.speak, .k button.speak { margin-left: 2px; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.row-actions { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+.sel-btn { display: flex; gap: 6px; }
 button.star { border: 0; background: none; cursor: pointer; color: var(--muted); font-size: 1.05rem; line-height: 1; padding: 2px 4px; border-radius: 5px; flex: none; }
 button.star:hover { color: var(--accent); background: var(--accent-soft); }
 button.star.on { color: #d9a514; }
@@ -180,7 +193,8 @@ button.star.btn { font-size: .88rem; border: 1px solid var(--border); padding: 5
 .g.sel-live { background: var(--sel); }
 .text ::selection { background: var(--sel); }
 .sent { border-radius: 4px; }
-.sel-btn { position: absolute; z-index: 30; box-shadow: var(--shadow); padding: 5px 11px; font-size: .88rem; }
+.sel-btn { position: absolute; z-index: 30; }
+.sel-btn .btn { box-shadow: var(--shadow); padding: 5px 11px; font-size: .88rem; }
 
 .panel { position: sticky; top: 68px; max-height: calc(100vh - 84px); overflow: auto; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin-bottom: 12px; }
@@ -570,6 +584,54 @@ function viewNew() {
   body.focus();
 }
 
+// ------------------------------------------------------------------ speech
+// Text-to-speech with the browser's own voices (Web Speech API): free, no
+// backend, and offline on systems with installed voices. Voice choice and
+// speed are per device, so they live in this browser's storage.
+const SPEECH_LOCALE = { ru: "ru-RU", fi: "fi-FI", sv: "sv-SE", de: "de-DE", en: "en-GB", fr: "fr-FR", es: "es-ES", it: "it-IT",
+  pt: "pt-PT", nl: "nl-NL", pl: "pl-PL", uk: "uk-UA", et: "et-EE", zh: "zh-CN", ja: "ja-JP", ko: "ko-KR", no: "nb-NO", da: "da-DK" };
+const canTTS = "speechSynthesis" in window;
+let VOICES = [];
+function loadVoices() { VOICES = canTTS ? speechSynthesis.getVoices() : []; }
+if (canTTS) { loadVoices(); speechSynthesis.addEventListener("voiceschanged", loadVoices); }
+const voiceLang = (v) => v.lang.toLowerCase().replace("_", "-").split("-")[0];
+const voicesFor = (lang) => VOICES.filter((v) => voiceLang(v) === (lang === "nb" ? "no" : lang) || (lang === "no" && voiceLang(v) === "nb"));
+function pickVoice(lang) {
+  const list = voicesFor(lang);
+  const saved = pref.get("tts.voice." + lang);
+  // Prefer the saved voice, then premium/enhanced ones, then plain system
+  // voices over the novelty ones (macOS names those "Eddy (Finnish (Finland))").
+  return list.find((v) => v.voiceURI === saved) || list.find((v) => /premium|enhanced/i.test(v.name))
+    || list.find((v) => !v.name.includes("(")) || list[0] || null;
+}
+let speakingBtn = null;
+function speak(text, lang, btn) {
+  if (!canTTS) { toast("This browser can't read text aloud.", "error"); return; }
+  if (speakingBtn && speakingBtn === btn && speechSynthesis.speaking) { speechSynthesis.cancel(); return; } // press again to stop
+  speechSynthesis.cancel();
+  const voice = pickVoice(lang);
+  if (!voice && VOICES.length) { toast(`No ${langName(lang)} voice on this device. See Settings → Speech.`, "error"); return; }
+  const u = new SpeechSynthesisUtterance(stripStress(text));
+  u.lang = voice?.lang || SPEECH_LOCALE[lang] || lang;
+  if (voice) u.voice = voice;
+  u.rate = Number(pref.get("tts.rate", "0.9"));
+  document.querySelectorAll(".speak.speaking").forEach((x) => x.classList.remove("speaking"));
+  speakingBtn = btn || null;
+  btn?.classList.add("speaking");
+  u.onend = u.onerror = () => { btn?.classList.remove("speaking"); if (speakingBtn === btn) speakingBtn = null; };
+  speechSynthesis.speak(u);
+}
+const SPEAKER_SVG = '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M3 7.5h3l4-3.5v12l-4-3.5H3z"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M13 7.2a4 4 0 0 1 0 5.6M15.3 5a7 7 0 0 1 0 10"/></svg>';
+// A 🔊 button; getText is called on click so it always reads the current text.
+function speakButton(getText, lang, { label = "", cls = "" } = {}) {
+  if (!canTTS) return null;
+  const b = el("button", { type: "button", class: `speak ${cls}`.trim(), title: label || "Listen", "aria-label": label || "Listen" });
+  b.innerHTML = SPEAKER_SVG + (label && cls.includes("btn") ? `<span>${label}</span>` : "");
+  b.addEventListener("mousedown", (e) => e.preventDefault()); // keep any text selection
+  b.addEventListener("click", (e) => { e.stopPropagation(); speak(getText(), lang, b); });
+  return b;
+}
+
 // ------------------------------------------------------------------ reader
 let R = null; // reader state
 
@@ -662,7 +724,8 @@ function renderText() {
       a.append(el("div", { class: "row" },
         el("div", { class: "orig" }, sentenceNode(s)),
         el("div", { class: "tr" + (s.translation ? "" : " missing"), lang: "" },
-          el("span", {}, s.translation || "—"), starButton(s))));
+          el("span", {}, s.translation || "—"),
+          el("span", { class: "row-actions" }, speakButton(() => R.t.body.slice(s.start, s.end), R.t.lang, { label: "Listen to the sentence" }), starButton(s)))));
     }
   } else {
     const flow = el("div", { class: "flow" });
@@ -813,12 +876,13 @@ function renderWordCard(r) {
   const a = r.analysis, L = r.lemma;
   panelShow(el("div", { class: "card word-card" },
     el("div", { class: "wc-top" },
-      el("div", { class: "surface", lang: R.t.lang }, r.surface),
+      el("div", { class: "surface", lang: R.t.lang }, r.surface, speakButton(() => r.surface, R.t.lang, { label: "Listen to this form" })),
       el("div", {},
         el("button", { class: "icon", title: "Analyse again without the cache", onclick: () => lookupWord(R.active.s, R.active.e, true) }, "↻"),
         sheetClose())),
     el("div", { class: "lemma-line" },
       el("span", { class: "lemma", lang: R.t.lang }, L.stressed || L.lemma),
+      speakButton(() => L.lemma, R.t.lang, { label: "Listen to the dictionary form" }),
       el("span", { class: "pos" }, L.pos),
       L.cefr ? el("span", { class: "cefr cefr-" + L.cefr[0], title: "CEFR · " + (L.cefr_source || "") }, L.cefr) : null),
     el("div", { class: "gloss" }, a.gloss),
@@ -859,7 +923,8 @@ async function setStatus(id, st) {
 }
 
 function sentenceBlock(sent) {
-  const box = el("div", { class: "sent-box" }, el("div", { class: "k" }, "Sentence"));
+  const box = el("div", { class: "sent-box" }, el("div", { class: "k" }, "Sentence ",
+    speakButton(() => sent.text, R.t.lang, { label: "Listen to the sentence" })));
   const tr = R.t.sentences.find((x) => x.id === sent.id)?.translation ?? sent.translation;
   if (tr) {
     const trEl = el("div", { class: "sent-tr" }, tr);
@@ -962,9 +1027,9 @@ function onSelect() {
 
 function showSelBtn(range, s, e) {
   hideSelBtn();
-  selBtn = el("button", { class: "btn primary sel-btn",
-    onmousedown: (ev) => ev.preventDefault(),
-    onclick: () => translatePhrase(s, e) }, "Translate phrase");
+  selBtn = el("div", { class: "sel-btn", onmousedown: (ev) => ev.preventDefault() },
+    speakButton(() => R.t.body.slice(s, e), R.t.lang, { label: "Listen", cls: "btn" }),
+    el("button", { type: "button", class: "btn primary", onclick: () => translatePhrase(s, e) }, "Translate phrase"));
   document.body.append(selBtn);
   // Sit above the first line of the selection, clear of the sticky header;
   // drop below the last line when there is no room above.
@@ -1022,7 +1087,7 @@ function liveSelect() {
 }
 
 document.addEventListener("mousedown", (e) => {
-  if (selBtn && e.target !== selBtn) hideSelBtn();
+  if (selBtn && !selBtn.contains(e.target)) hideSelBtn();
   const art = e.target.closest?.("#text");
   clearLive();
   // Suppress word hover boxes while dragging out a selection.
@@ -1060,7 +1125,7 @@ async function translatePhrase(s, e, model = null) {
 function renderPhraseCard(p) {
   panelShow(el("div", { class: "card phrase-card" },
     el("div", { class: "wc-top" }, el("div", { class: "k" }, p.kind === "sentence" ? "Phrase book · sentence" : "Phrase book"), sheetClose()),
-    el("div", { class: "phrase-src", lang: R.t.lang }, p.span),
+    el("div", { class: "phrase-src", lang: R.t.lang }, p.span, " ", speakButton(() => p.span, R.t.lang)),
     el("div", { class: "gloss" }, p.translation),
     p.literal ? el("div", { class: "kv" }, el("span", { class: "k" }, "Literally"), p.literal) : null,
     p.notes ? el("div", { class: "notes" }, p.notes) : null,
@@ -1272,6 +1337,7 @@ async function viewVocab({ phrasebook = false } = {}) {
           el("button", { class: "icon", title: "Close", onclick: () => dlg.close() }, "✕")),
         el("div", { class: "lemma-line" },
           el("span", { class: "lemma", lang: d.lang }, d.stressed || d.lemma),
+          speakButton(() => d.lemma, d.lang),
           el("span", { class: "pos" }, d.pos)),
         el("div", { class: "gloss" }, d.gloss || "—"),
         statusButtons(d, (s) => { w.status = s; refreshCard(); }),
@@ -1315,6 +1381,7 @@ async function viewVocab({ phrasebook = false } = {}) {
           el("div", { class: "pb-meta" },
             el("span", {}, p.kind === "sentence" ? "★ Sentence · " : "Phrase · ",
               p.text_id ? el("a", { href: `#/text/${p.text_id}` }, p.text_title) : "text deleted"),
+            speakButton(() => p.span, p.lang),
             el("button", { class: "icon", title: "Remove from phrase book", "aria-label": "Remove from phrase book", onclick: async () => {
               if (!confirm("Remove this from your phrase book?")) return;
               await api(`/api/phrases/${p.id}`, { method: "DELETE" });
@@ -1533,6 +1600,7 @@ async function viewSettings() {
       const r = await api("/api/settings", { method: "PUT", body: { values: { languages: codes.join(",") } } });
       setLanguages(r.languages);
       drawLanguages();
+      drawSpeech();
       toast(msg);
     } catch (err) { toast(err.message, "error"); }
   }
@@ -1568,7 +1636,38 @@ async function viewSettings() {
       el("p", { class: "muted small", style: "margin:8px 0 0" }, "Other languages rely on the model alone."));
   }
   drawLanguages();
+  // Speech: voice per language and speed, stored per device.
+  const speechBox = el("div");
+  function drawSpeech() {
+    if (!canTTS) { speechBox.replaceChildren(el("p", { class: "muted small", style: "margin:0" }, "This browser can't read text aloud.")); return; }
+    const rate = el("input", { type: "range", min: "0.5", max: "1.3", step: "0.05", value: pref.get("tts.rate", "0.9"), "aria-label": "Speaking speed" });
+    const rateLabel = el("span", { class: "muted small" });
+    const showRate = () => { rateLabel.textContent = `${Math.round(Number(rate.value) * 100)}%`; };
+    rate.addEventListener("input", () => { pref.set("tts.rate", rate.value); showRate(); });
+    showRate();
+    const rows = Object.keys(LANGS).map((code) => {
+      const list = voicesFor(code);
+      if (!list.length) {
+        return el("div", { class: "kv" }, el("b", {}, LANGS[code]), " — ", el("span", { class: "muted" }, "no voice installed on this device"));
+      }
+      const current = pickVoice(code);
+      const select = el("select", { "aria-label": `${LANGS[code]} voice`, onchange: (e) => pref.set("tts.voice." + code, e.target.value) },
+        list.map((v) => el("option", { value: v.voiceURI, selected: v === current }, `${v.name}${v.localService ? "" : " (online)"}`)));
+      const sample = { ru: "Здравствуйте! Как дела?", fi: "Hyvää huomenta! Mitä kuuluu?", sv: "God morgon! Hur mår du?", de: "Guten Morgen! Wie geht's?" }[code] || LANGS[code];
+      return el("div", { class: "voice-row" }, el("b", {}, LANGS[code]),
+        el("div", { class: "add-lang" }, select, speakButton(() => sample, code, { label: "Test", cls: "btn" })));
+    });
+    speechBox.replaceChildren(...rows,
+      el("div", { class: "voice-row" }, el("b", {}, "Speed "), rateLabel, rate),
+      el("p", { class: "muted small", style: "margin:8px 0 0" },
+        "Voices come from this device, so these choices are saved in this browser only. To add one: on macOS, System Settings → Accessibility → Spoken Content → System voice → Manage voices; on iPhone, Settings → Accessibility → Spoken Content → Voices; on Windows, Settings → Time & language → Speech."));
+  }
+  drawSpeech();
+  if (canTTS) speechSynthesis.addEventListener("voiceschanged", () => { if (speechBox.isConnected) drawSpeech(); });
   const side = el("div", {},
+    el("div", { class: "card" }, el("h2", {}, "Speech"),
+      el("p", { class: "muted small", style: "margin-top:-6px" }, "Use 🔊 to hear a selection, a word, a phrase or a sentence read aloud."),
+      speechBox),
     el("div", { class: "card" },
       el("h2", {}, "Offline analysers"),
       el("p", { class: "muted small", style: "margin-top:-6px" }, "When available, their candidate dictionary forms are passed to the model as hints."),
