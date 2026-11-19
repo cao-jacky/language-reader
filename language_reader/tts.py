@@ -8,6 +8,7 @@ and speed.
 """
 from __future__ import annotations
 
+import array
 import hashlib
 import io
 import json
@@ -209,7 +210,8 @@ def synthesize(text: str, key: str, speed: float = 1.0) -> bytes:
     if not KEY_RE.match(key):
         raise TTSError("Not a Piper voice name")
     speed = min(max(speed, 0.5), 2.0)
-    name = hashlib.sha256(f"{speed:.2f}\n{text}".encode()).hexdigest()[:32]
+    # "v2": audio is post-processed (see _smooth); older cached clips are not reused.
+    name = hashlib.sha256(f"v2\n{speed:.2f}\n{text}".encode()).hexdigest()[:32]
     path = CACHE_DIR / key / f"{name}.wav"
     if path.exists():
         return path.read_bytes()
@@ -218,13 +220,42 @@ def synthesize(text: str, key: str, speed: float = 1.0) -> bytes:
     voice = _voice(key)
     buf = io.BytesIO()
     with _synth_lock, wave.open(buf, "wb") as w:
-        voice.synthesize_wav(text, w, syn_config=SynthesisConfig(length_scale=1 / speed))
-    data = buf.getvalue()
+        # Slightly under full scale: normalised output otherwise peaks at the
+        # very top of the range, where some outputs crackle.
+        voice.synthesize_wav(text, w, syn_config=SynthesisConfig(length_scale=1 / speed, volume=0.9))
+    data = _smooth(buf.getvalue())
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".part")
     tmp.write_bytes(data)
     tmp.replace(path)
     return data
+
+
+def _smooth(wav_bytes: bytes) -> bytes:
+    """Fade the edges and pad with silence so playback starts and stops cleanly.
+
+    A short fade-in and fade-out remove any step at the first or last sample,
+    and trailing silence lets the output settle before the player stops.
+    """
+    with wave.open(io.BytesIO(wav_bytes)) as r:
+        params = r.getparams()
+        if params.sampwidth != 2:
+            return wav_bytes
+        samples = array.array("h", r.readframes(r.getnframes()))
+    rate, ch = params.framerate, params.nchannels
+    fade_in, fade_out = int(rate * 0.008) * ch, int(rate * 0.03) * ch
+    n = len(samples)
+    for i in range(min(fade_in, n)):
+        samples[i] = int(samples[i] * i / fade_in)
+    for i in range(min(fade_out, n)):
+        samples[n - 1 - i] = int(samples[n - 1 - i] * i / fade_out)
+    lead = array.array("h", bytes(2 * int(rate * 0.03) * ch))
+    tail = array.array("h", bytes(2 * int(rate * 0.2) * ch))
+    out = io.BytesIO()
+    with wave.open(out, "wb") as w:
+        w.setparams(params)
+        w.writeframes((lead + samples + tail).tobytes())
+    return out.getvalue()
 
 
 def cache_size() -> int:

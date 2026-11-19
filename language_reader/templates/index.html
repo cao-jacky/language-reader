@@ -167,9 +167,10 @@ button.speak.btn:hover { background: var(--surface-2); }
 .surface button.speak, .k button.speak { margin-left: 2px; text-transform: none; letter-spacing: 0; font-weight: 400; }
 .row-actions { display: inline-flex; align-items: center; gap: 2px; flex: none; }
 .sel-btn { display: flex; gap: 6px; }
-button.star { border: 0; background: none; cursor: pointer; color: var(--muted); font-size: 1.05rem; line-height: 1; padding: 2px 4px; border-radius: 5px; flex: none; }
+button.star { border: 0; background: none; cursor: pointer; color: var(--muted); line-height: 1; padding: 3px 5px; border-radius: 5px; flex: none;
+  display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: .85rem; }
 button.star:hover { color: var(--accent); background: var(--accent-soft); }
-button.star.on { color: #d9a514; }
+button.star.on { color: var(--accent); }
 button.star.btn { font-size: .88rem; border: 1px solid var(--border); padding: 5px 10px; }
 .pb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
 .pb-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
@@ -230,7 +231,8 @@ button.star.btn { font-size: .88rem; border: 1px solid var(--border); padding: 5
 details.chat { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
 details.chat > summary { cursor: pointer; font-size: .88rem; font-weight: 550; color: var(--accent); list-style: none; }
 details.chat > summary::-webkit-details-marker { display: none; }
-details.chat > summary::before { content: "💬 "; }
+details.chat > summary::before { content: "›"; display: inline-block; width: 1em; transition: transform .15s; }
+details.chat[open] > summary::before { transform: rotate(90deg); }
 .chat-count { color: var(--muted); font-weight: 400; }
 .chat-body { margin-top: 10px; }
 .chat-log { display: flex; flex-direction: column; gap: 8px; max-height: 340px; overflow-y: auto; }
@@ -242,9 +244,6 @@ details.chat > summary::before { content: "💬 "; }
 .bubble .md ul, .bubble .md ol { margin: 4px 0 6px; padding-left: 20px; }
 .bubble .md code { font-size: .85em; background: var(--border); padding: 0 3px; border-radius: 3px; }
 .bubble-meta { display: flex; align-items: center; gap: 4px; margin-top: 4px; font-size: .72rem; color: var(--muted); }
-.chat-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }
-.chip { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 999px; padding: 3px 10px; font: inherit; font-size: .8rem; cursor: pointer; }
-.chip:hover { border-color: var(--accent); color: var(--accent); }
 .chat-input { margin-top: 8px; }
 .chat-input textarea { font-size: .9rem; resize: vertical; }
 .chat-send { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
@@ -647,38 +646,77 @@ function pickVoice(lang) {
 let speakingBtn = null;
 let TTS = { engine: "browser", voices: {} };  // from /api/tts/config
 
-// Piper: audio generated on the server, played with an <audio> element.
-let piperAudio = null, piperBtn = null;
-const piperCache = new Map();  // text|lang|speed|voice -> blob URL
+// Piper: audio generated on the server, played through Web Audio.
+// One AudioContext stays open between clips. Opening and closing the audio
+// output for every clip (as an <audio> element does) makes some systems,
+// macOS especially, click when playback starts and ends. It is suspended
+// only after a few idle minutes. Each clip fades in and out, and stopping
+// early fades out too.
+let audioCtx = null, ctxIdle = 0;
+let piperNode = null, piperBtn = null;  // { src, gain } for the clip playing
+const piperCache = new Map();  // text|lang|speed|voice -> decoded AudioBuffer
+function audioContext() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  audioCtx ??= new AC();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  clearTimeout(ctxIdle);
+  return audioCtx;
+}
+function scheduleIdle() {
+  clearTimeout(ctxIdle);
+  ctxIdle = setTimeout(() => { if (audioCtx && !piperNode) audioCtx.suspend(); }, 5 * 60 * 1000);
+}
 function stopPiper() {
-  if (piperAudio) { piperAudio.pause(); piperAudio = null; }
+  if (piperNode && audioCtx) {
+    const { src, gain } = piperNode;
+    const t = audioCtx.currentTime;
+    gain.gain.cancelScheduledValues(t);
+    gain.gain.setValueAtTime(gain.gain.value, t);
+    gain.gain.linearRampToValueAtTime(0, t + 0.04);
+    src.onended = null;
+    try { src.stop(t + 0.05); } catch {}
+  }
+  piperNode = null;
   piperBtn?.classList.remove("speaking"); piperBtn = null;
+  scheduleIdle();
 }
 async function speakPiper(text, lang, btn, voice = null) {
   const again = piperBtn && piperBtn === btn;
   stopPiper();
   if (canTTS && (speechSynthesis.speaking || speechSynthesis.pending)) speechSynthesis.cancel();
   if (again) return;  // press again to stop
+  const ctx = audioContext();  // created inside the click, so the browser allows sound
+  if (!ctx) { toast("This browser can't play audio.", "error"); return; }
   piperBtn = btn || null;
   btn?.classList.add("speaking");
   const speed = Number(pref.get("tts.rate", "0.9"));
   const key = [text, lang, speed, voice || TTS.voices[lang]].join("|");
   try {
-    let url = piperCache.get(key);
-    if (!url) {
+    let buffer = piperCache.get(key);
+    if (!buffer) {
       const headers = { "Content-Type": "application/json" };
       if (TOKEN) headers.Authorization = "Bearer " + TOKEN;
       const r = await fetch("/api/tts/speak", { method: "POST", headers, body: JSON.stringify({ text, lang, speed, voice }) });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
-      url = URL.createObjectURL(await r.blob());
-      piperCache.set(key, url);
-      if (piperCache.size > 60) { const [k, u] = piperCache.entries().next().value; URL.revokeObjectURL(u); piperCache.delete(k); }
+      buffer = await ctx.decodeAudioData(await r.arrayBuffer());
+      piperCache.set(key, buffer);
+      if (piperCache.size > 60) piperCache.delete(piperCache.keys().next().value);
     }
     if (piperBtn !== (btn || null)) return;  // another button was pressed meanwhile
-    const a = new Audio(url);
-    piperAudio = a;
-    a.onended = a.onerror = () => { if (piperAudio === a) stopPiper(); };
-    await a.play();
+    const src = ctx.createBufferSource();
+    const gain = ctx.createGain();
+    src.buffer = buffer;
+    const t = ctx.currentTime + 0.02;
+    gain.gain.setValueAtTime(0, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(1, t + 0.015);
+    gain.gain.setValueAtTime(1, t + buffer.duration - 0.05);
+    gain.gain.linearRampToValueAtTime(0, t + buffer.duration);
+    src.connect(gain).connect(ctx.destination);
+    const node = { src, gain };
+    piperNode = node;
+    src.onended = () => { if (piperNode === node) { piperNode = null; piperBtn?.classList.remove("speaking"); piperBtn = null; scheduleIdle(); } };
+    src.start(t);
   } catch (err) {
     if (piperBtn === (btn || null)) stopPiper();
     toast(`Piper: ${err.message}`, "error");
@@ -708,8 +746,10 @@ function speak(text, lang, btn) {
   const start = () => { if (speechSynthesis.paused) speechSynthesis.resume(); speechSynthesis.speak(u); };
   if (busy) setTimeout(start, 120); else start();
 }
+const BOOKMARK_SVG = '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" d="M5.5 3h9v14l-4.5-3.5L5.5 17z"/></svg>';
+const BOOKMARK_ON_SVG = '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" d="M5.5 3h9v14l-4.5-3.5L5.5 17z"/></svg>';
 const SPEAKER_SVG = '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M3 7.5h3l4-3.5v12l-4-3.5H3z"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M13 7.2a4 4 0 0 1 0 5.6M15.3 5a7 7 0 0 1 0 10"/></svg>';
-// A 🔊 button; getText is called on click so it always reads the current text.
+// A speaker button; getText is called on click so it always reads the current text.
 function speakButton(getText, lang, { label = "", cls = "" } = {}) {
   if (!canTTS && TTS.engine !== "piper") return null;
   const b = el("button", { type: "button", class: `speak ${cls}`.trim(), title: label || "Listen", "aria-label": label || "Listen" });
@@ -744,11 +784,6 @@ function renderMarkdown(text) {
   return div;
 }
 
-const CHAT_SUGGESTIONS = {
-  word: ["More example sentences", "Explain the grammar here", "Similar or easily confused words", "Common collocations"],
-  phrase: ["Break it down word by word", "Other ways to say this", "When would I use this?"],
-};
-
 // A saved conversation with the model about one word (lemma) or phrase.
 function chatBox(kind, refId, { textId = null, lang = "" } = {}) {
   let chatId = null, count = 0;
@@ -765,11 +800,9 @@ function chatBox(kind, refId, { textId = null, lang = "" } = {}) {
     await api(`/api/chat/${chatId}`, { method: "DELETE" });
     chatId = null; draw([]);
   } }, "Clear conversation");
-  const chips = el("div", { class: "chat-chips" }, CHAT_SUGGESTIONS[kind].map((q) =>
-    el("button", { type: "button", class: "chip", onclick: () => { input.value = q; submit(); } }, q)));
   const box = el("details", { class: "chat" },
     el("summary", {}, `Ask the model about this ${kind}`, countEl),
-    el("div", { class: "chat-body" }, log, chips,
+    el("div", { class: "chat-body" }, log,
       el("div", { class: "chat-input" }, input,
         el("div", { class: "chat-send" }, modelSel, el("span", { style: "flex:1" }), clearBtn, send))));
 
@@ -783,7 +816,6 @@ function chatBox(kind, refId, { textId = null, lang = "" } = {}) {
     count = messages.filter((m) => m.role === "user").length;
     countEl.textContent = count ? ` · ${count} question${count === 1 ? "" : "s"} saved` : "";
     log.replaceChildren(...messages.map(bubble));
-    chips.style.display = messages.length ? "none" : "";
     clearBtn.style.display = chatId ? "" : "none";
     log.scrollTop = log.scrollHeight;
   }
@@ -792,13 +824,12 @@ function chatBox(kind, refId, { textId = null, lang = "" } = {}) {
     if (!message || send.disabled) return;
     send.disabled = true; input.disabled = true;
     const pending = [el("div", { class: "bubble user" }, el("div", {}, message)), el("div", { class: "bubble assistant" }, el("div", { class: "spinner" }, "Thinking…"))];
-    log.append(...pending); chips.style.display = "none"; log.scrollTop = log.scrollHeight;
+    log.append(...pending); log.scrollTop = log.scrollHeight;
     try {
       const r = await api("/api/chat", { method: "POST", body: { kind, ref_id: refId, message, text_id: textId, model: modelSel?.value || null } });
       chatId = r.chat_id; input.value = ""; draw(r.messages);
     } catch (err) {
       pending.forEach((x) => x.remove());
-      if (!log.children.length) chips.style.display = "";
       toast(err.message, "error");
     }
     send.disabled = false; input.disabled = false; input.focus();
@@ -952,7 +983,7 @@ function closeSheet() {
 
 const savedSentence = (sent) => R.t.phrases.find((p) => p.kind === "sentence" && p.start === sent.start && p.end === sent.end);
 
-// ☆ / ★ toggle that saves a sentence and its translation to the phrase book.
+// Bookmark toggle that saves a sentence and its translation to the phrase book.
 function starButton(sent, { label = false } = {}) {
   const b = el("button", { type: "button", class: "star" + (label ? " btn" : "") });
   const draw = () => {
@@ -960,7 +991,7 @@ function starButton(sent, { label = false } = {}) {
     b.classList.toggle("on", on);
     b.title = on ? "Remove from phrase book" : "Save sentence to phrase book";
     b.setAttribute("aria-label", b.title);
-    b.textContent = (on ? "★" : "☆") + (label ? (on ? " In phrase book" : " Save to phrase book") : "");
+    b.innerHTML = (on ? BOOKMARK_ON_SVG : BOOKMARK_SVG) + (label ? `<span>${on ? "In phrase book" : "Save to phrase book"}</span>` : "");
   };
   b.addEventListener("click", async (e) => {
     e.stopPropagation();
@@ -998,7 +1029,7 @@ function renderPanelIdle() {
     el("h2", {}, "How to read"),
     el("p", {}, "Click a word to see its dictionary form, meaning in context and CEFR level. It is saved to your vocabulary."),
     el("p", {}, "Select several words to translate them as a phrase. It goes into your phrase book."),
-    el("p", {}, "After translating the passage, ☆ any sentence in side-by-side view to save it to the phrase book too."),
+    el("p", {}, "After translating the passage, use the bookmark beside any sentence in side-by-side view to save it to the phrase book too."),
     el("div", { class: "legend" },
       el("span", {}, el("span", { class: "sw", style: "background:var(--new-bg)" }), "new"),
       el("span", {}, el("span", { class: "sw", style: "background:var(--learning-bg)" }), "learning"),
@@ -1008,7 +1039,7 @@ function renderPanelIdle() {
   const list = el("div", { class: "card" }, el("h2", {}, `Phrase book: from this text (${phrases.length})`),
     phrases.length
       ? el("ul", { class: "phrase-list" }, phrases.map((ph) => el("li", { onclick: () => renderPhraseCard(ph) },
-          el("div", { class: "p-src", lang: R.t.lang }, ph.kind === "sentence" ? "★ " : "", ph.span), el("div", { class: "p-tr" }, ph.translation))))
+          el("div", { class: "p-src", lang: R.t.lang }, ph.span, ph.kind === "sentence" ? el("span", { class: "muted small" }, " · sentence") : null), el("div", { class: "p-tr" }, ph.translation))))
       : el("div", { class: "muted small" }, "None yet."));
   list.append(el("div", { class: "small", style: "margin-top:8px" }, el("a", { href: "#/phrases" }, "Open the phrase book →")));
   p.replaceChildren(help, list);
@@ -1550,7 +1581,7 @@ async function viewVocab({ phrasebook = false } = {}) {
     if (!rows.length) {
       results.replaceChildren(el("div", { class: "empty" }, el("p", {}, st.q
         ? "Nothing in your phrase book matches."
-        : "Your phrase book is empty. Select several words while reading to translate a phrase, or ☆ a sentence in a translated passage.")));
+        : "Your phrase book is empty. Select several words while reading to translate a phrase, or bookmark a sentence in a translated passage.")));
       return;
     }
     const multi = new Set(rows.map((p) => p.lang)).size > 1;
@@ -1564,7 +1595,7 @@ async function viewVocab({ phrasebook = false } = {}) {
           p.literal ? el("div", { class: "muted small" }, "Literally: " + p.literal) : null,
           p.notes ? el("div", { class: "notes", style: "margin:2px 0" }, p.notes) : null,
           el("div", { class: "pb-meta" },
-            el("span", {}, p.kind === "sentence" ? "★ Sentence · " : "Phrase · ",
+            el("span", {}, p.kind === "sentence" ? "Sentence · " : "Phrase · ",
               p.text_id ? el("a", { href: `#/text/${p.text_id}` }, p.text_title) : "text deleted"),
             speakButton(() => p.span, p.lang),
             el("button", { class: "icon", title: "Remove from phrase book", "aria-label": "Remove from phrase book", onclick: async () => {
@@ -1734,14 +1765,14 @@ async function viewSettings() {
       if (r.ok) {
         const w = r.word;
         result.replaceChildren(el("div", { class: "test-result ok" },
-          el("b", {}, "✓ Working"), ` · ${r.model} · ${(r.elapsed_ms / 1000).toFixed(1)} s`,
+          el("b", {}, "Working"), ` · ${r.model} · ${(r.elapsed_ms / 1000).toFixed(1)} s`,
           el("div", { style: "margin-top:6px" }, "книгу → ", el("b", { lang: "ru" }, w.stressed || w.lemma), ` (${w.pos}, ${w.morphology}) “${w.gloss}” `, w.cefr ? el("span", { class: "cefr cefr-" + w.cefr[0] }, w.cefr) : null),
           r.deepl ? el("div", {}, "DeepL: Hyvää huomenta! → ", r.deepl) : null));
       } else {
-        result.replaceChildren(el("div", { class: "test-result fail" }, el("b", {}, "✗ Failed"), ` · ${r.provider} · ${r.model || "no model"}`, el("pre", {}, r.error)));
+        result.replaceChildren(el("div", { class: "test-result fail" }, el("b", {}, "Failed"), ` · ${r.provider} · ${r.model || "no model"}`, el("pre", {}, r.error)));
       }
     } catch (err) {
-      result.replaceChildren(el("div", { class: "test-result fail" }, el("b", {}, "✗ "), err.message));
+      result.replaceChildren(el("div", { class: "test-result fail" }, el("b", {}, "Failed: "), err.message));
     }
     testBtn.disabled = false; testBtn.textContent = "Save & test";
   } }, "Save & test");
@@ -1948,7 +1979,7 @@ async function viewSettings() {
   if (canTTS) speechSynthesis.addEventListener("voiceschanged", () => { if (speechBox.isConnected && TTS.engine !== "piper") drawSpeech(); });
   const speechCard = el("div", { class: "form-card", style: "max-width:none;margin-top:20px" },
     el("h2", {}, "Speech"),
-    el("p", { class: "muted small", style: "margin-top:-6px" }, "Use 🔊 to hear a selection, a word, a phrase or a sentence read aloud."),
+    el("p", { class: "muted small", style: "margin-top:-6px" }, "The speaker buttons read a selection, a word, a phrase or a sentence aloud."),
     speechBox);
   const side = el("div", {},
     el("div", { class: "card" },
