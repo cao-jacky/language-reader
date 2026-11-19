@@ -56,20 +56,37 @@ then becomes "manual".
 
 ## Running it
 
+There is no published image: the compose file builds it from this repository,
+so deploying is just pointing Docker at the repo.
+
+### Portainer
+
+1. **Stacks → Add stack → Repository.**
+2. Repository URL: `https://github.com/cao-jacky/language-reader`, reference
+   `refs/heads/main`, compose path `docker-compose.yml`.
+3. Optionally add environment variables (see [Configuration](#configuration)),
+   for example `HOST_PORT`, `DATA_PATH` or `AUTH_TOKEN`. None are required.
+4. **Deploy the stack.** The first deploy builds the image, which takes a
+   minute or two.
+
+Open `http://<host>:8413`, go to **Settings**, choose a backend and press
+**Save & test**.
+
+To update, open the stack and use **Pull and redeploy** (or turn on GitOps
+updates so Portainer redeploys on each new commit). `pull_policy: build` makes
+every deploy rebuild from the latest source, and your data stays in the volume.
+
+By default the database lives in a named volume, `language-reader-data`. Set
+`DATA_PATH` to an absolute host folder to keep it somewhere you can back up
+directly, and uncomment `user:` in the compose file so the files are owned by
+you rather than root.
+
 ### Docker Compose
 
 ```
-cp .env.example .env      # set DATA_PATH to a folder for reader.db
-docker compose up -d
-```
-
-Open <http://localhost:8413>, go to **Settings**, choose a backend and press
-**Save & test**.
-
-To build the image from source instead of pulling it from GHCR:
-
-```
-docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+git clone https://github.com/cao-jacky/language-reader && cd language-reader
+cp .env.example .env      # optional
+docker compose up -d --build
 ```
 
 ### Directly
@@ -89,7 +106,10 @@ only provide defaults for a fresh install; values saved in the page win.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DATA_DIR` | `./data` | Folder holding `reader.db` |
+| `HOST_PORT` | `8413` | Host port (compose only) |
+| `DATA_PATH` | named volume | Host folder for `reader.db` (compose only) |
+| `WITH_VOIKKO` | `1` | Build with Voikko for Finnish hints (compose only) |
+| `DATA_DIR` | `./data` | Folder holding `reader.db` inside the app |
 | `PORT` / `HOST` | `8080` / `0.0.0.0` | Listen address |
 | `AUTH_TOKEN` | unset | Require this token on every `/api` request. The page asks once and remembers it. |
 | `LLM_PROVIDER` | `anthropic` | `anthropic`, `openai` or `none` |
@@ -100,6 +120,9 @@ only provide defaults for a fresh install; values saved in the page win.
 | `PASSAGE_PROVIDER` | `llm` | `llm` or `deepl` |
 | `DEEPL_API_KEY` | unset | Fallback DeepL key |
 | `TARGET_LANGUAGE` | `English` | Language for glosses and translations |
+
+The compose file passes through `AUTH_TOKEN`, `ANTHROPIC_API_KEY` and
+`DEEPL_API_KEY`; add any of the others under `environment:` if you want them.
 
 API keys saved on the Settings page are stored in `reader.db` and never returned
 to the browser (only their last four characters). Back up or protect the data

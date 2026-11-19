@@ -1,27 +1,37 @@
 services:
   language-reader:
-    # Published by .github/workflows/publish.yml. No `build:` here so the file
-    # works as a Portainer stack; add docker-compose.build.yml to build locally.
-    image: ghcr.io/cao-jacky/language-reader:latest
+    # Built from this repository's source; there is no published image.
+    # pull_policy: build skips the registry pull that Portainer runs before
+    # starting a stack (which would fail for a local-only image) and rebuilds
+    # on every deploy, so "Pull and redeploy" picks up new commits.
+    build:
+      context: .
+      args:
+        # Set to 0 to leave out Voikko (offline Finnish morphology hints).
+        WITH_VOIKKO: ${WITH_VOIKKO:-1}
+    pull_policy: build
     container_name: language-reader
     restart: unless-stopped
     ports:
-      - "8413:8080"
+      - "${HOST_PORT:-8413}:8080"
     volumes:
       # reader.db lives here: texts, vocabulary, settings, translation cache.
-      - ${DATA_PATH:?set DATA_PATH to a folder for reader.db}:/data
+      # Defaults to a named volume; set DATA_PATH to an absolute host path to
+      # bind-mount a folder instead.
+      - ${DATA_PATH:-language-reader-data}:/data
     environment:
       DATA_DIR: /data
       PORT: "8080"
-      # Uncomment to require a token. The page prompts once and remembers it.
-      # AUTH_TOKEN: "change-me"
-      # Optional fallbacks; anything saved on the Settings page wins.
-      # ANTHROPIC_API_KEY: ""
-      # DEEPL_API_KEY: ""
+      # Optional. Set as stack environment variables in Portainer (or in .env).
+      # Backend choices and keys saved on the Settings page take precedence.
+      AUTH_TOKEN: ${AUTH_TOKEN:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      DEEPL_API_KEY: ${DEEPL_API_KEY:-}
     # Lets the Settings page reach Ollama or LM Studio on the host as
     # http://host.docker.internal:11434/v1 (needed on Linux, harmless elsewhere).
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # Uncomment when DATA_PATH is a bind mount, so files are owned by you.
     # user: "1000:1000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=4).status==200 else 1)"]
@@ -29,3 +39,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+volumes:
+  language-reader-data:
