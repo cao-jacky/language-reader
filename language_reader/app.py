@@ -478,6 +478,7 @@ def list_phrases(lang: str = "", q: str = "") -> list[dict]:
 def delete_phrase(pid: int) -> dict:
     with db.tx() as c:
         c.execute("DELETE FROM phrases WHERE id = ?", (pid,))
+        c.execute("DELETE FROM chats WHERE kind = 'phrase' AND ref_id = ?", (pid,))
     return {"ok": True}
 
 
@@ -591,6 +592,7 @@ def patch_vocab(lid: int, req: VocabPatch) -> dict:
 def delete_vocab(lid: int) -> dict:
     with db.tx() as c:
         c.execute("DELETE FROM lemmas WHERE id = ?", (lid,))
+        c.execute("DELETE FROM chats WHERE kind = 'word' AND ref_id = ?", (lid,))
     return {"ok": True}
 
 
@@ -675,6 +677,119 @@ def get_usage() -> dict:
 @app.delete("/api/usage")
 def reset_usage() -> dict:
     usage.reset()
+    return {"ok": True}
+
+
+# --------------------------------------------------------------------------- #
+# chat about a word or phrase
+# --------------------------------------------------------------------------- #
+
+CHAT_SYSTEM = """You are a friendly, precise {lang} tutor for an adult learner whose working language is {target}. \
+The learner is reading a {lang} text and has follow-up questions about one {kind}, described below. \
+Answer in {target}. Be concise: a few sentences or a short list, unless asked for more. \
+Give {lang} examples where they help{stress}. Use simple Markdown only (bold, italics, bullet lists).
+
+What the learner is looking at:
+{context}"""
+CHAT_HISTORY = 40  # messages sent back to the model; older ones stay saved but aren't resent
+
+
+def _chat_context(c, kind: str, ref_id: int, text_id: int | None) -> tuple[str, str]:
+    """(lang, description) of the word or phrase a chat is about."""
+    if kind == "word":
+        L = c.execute("SELECT * FROM lemmas WHERE id = ?", (ref_id,)).fetchone()
+        if not L:
+            raise HTTPException(404, "Word not found")
+        occ = None
+        if text_id is not None:
+            occ = c.execute(
+                "SELECT o.*, s.translation FROM occurrences o LEFT JOIN sentences s ON s.id = o.sentence_id "
+                "WHERE o.lemma_id = ? AND o.text_id = ? ORDER BY o.id DESC LIMIT 1", (ref_id, text_id)).fetchone()
+        if occ is None:
+            occ = c.execute(
+                "SELECT o.*, s.translation FROM occurrences o LEFT JOIN sentences s ON s.id = o.sentence_id "
+                "WHERE o.lemma_id = ? ORDER BY o.id DESC LIMIT 1", (ref_id,)).fetchone()
+        lines = [f"Word (dictionary form): {L['stressed'] or L['lemma']} ({L['pos']})", f"Meaning: {L['gloss'] or '?'}"]
+        if L["other_meanings"] and json.loads(L["other_meanings"]):
+            lines.append("Other meanings: " + "; ".join(json.loads(L["other_meanings"])))
+        if L["notes"]:
+            lines.append(f"Notes: {L['notes']}")
+        if L["cefr"]:
+            lines.append(f"CEFR level: {L['cefr']}")
+        if occ:
+            lines.append(f"Form in the text: {occ['surface']}" + (f" ({occ['morphology']})" if occ["morphology"] else ""))
+            lines.append(f"Sentence: {occ['sentence_text']}")
+            if occ["translation"]:
+                lines.append(f"Sentence translation: {occ['translation']}")
+        return L["lang"], "\n".join(lines)
+    if kind == "phrase":
+        P = c.execute("SELECT * FROM phrases WHERE id = ?", (ref_id,)).fetchone()
+        if not P:
+            raise HTTPException(404, "Phrase not found")
+        lines = [f"Phrase: {P['span']}", f"Translation: {P['translation'] or '?'}"]
+        if P["literal"]:
+            lines.append(f"Literal translation: {P['literal']}")
+        if P["notes"]:
+            lines.append(f"Notes: {P['notes']}")
+        if P["context"] and P["context"] != P["span"]:
+            lines.append(f"Context: {P['context']}")
+        return P["lang"], "\n".join(lines)
+    raise HTTPException(400, "kind must be word or phrase")
+
+
+def _chat_messages(c, chat_id: int) -> list[dict]:
+    return [dict(r) for r in c.execute(
+        "SELECT id, role, content, model, created_at FROM chat_messages WHERE chat_id = ? ORDER BY id", (chat_id,))]
+
+
+@app.get("/api/chat")
+def get_chat(kind: str, ref_id: int) -> dict:
+    with db.tx() as c:
+        chat = c.execute("SELECT * FROM chats WHERE kind = ? AND ref_id = ?", (kind, ref_id)).fetchone()
+        return {"chat": dict(chat) if chat else None, "messages": _chat_messages(c, chat["id"]) if chat else []}
+
+
+class ChatReq(BaseModel):
+    kind: str
+    ref_id: int
+    message: str = Field(min_length=1, max_length=4000)
+    text_id: int | None = None  # for a word: use its sentence in this text as context
+    model: str | None = None
+
+
+@app.post("/api/chat")
+def post_chat(req: ChatReq) -> dict:
+    s = _settings_for(req.model)
+    with db.tx() as c:
+        lang, context = _chat_context(c, req.kind, req.ref_id, req.text_id)
+        chat = c.execute("SELECT id FROM chats WHERE kind = ? AND ref_id = ?", (req.kind, req.ref_id)).fetchone()
+        history = _chat_messages(c, chat["id"]) if chat else []
+    name = languages.name(lang)
+    system = CHAT_SYSTEM.format(
+        lang=name, target=s["target_language"], kind=req.kind, context=context,
+        stress=" (mark the stressed vowel in Russian examples with an acute accent)" if lang == "ru" else "",
+    )
+    msgs = [{"role": m["role"], "content": m["content"]} for m in history[-CHAT_HISTORY:]]
+    if msgs and msgs[0]["role"] != "user":
+        msgs = msgs[1:]
+    msgs.append({"role": "user", "content": req.message.strip()})
+    reply, tokens = _backend(llm.chat, s, system, msgs)
+    # Saved only once the answer arrives, so a failed call leaves nothing half-done.
+    with db.tx() as c:
+        c.execute("INSERT OR IGNORE INTO chats(kind, ref_id, lang) VALUES(?, ?, ?)", (req.kind, req.ref_id, lang))
+        chat_id = c.execute("SELECT id FROM chats WHERE kind = ? AND ref_id = ?", (req.kind, req.ref_id)).fetchone()["id"]
+        c.execute("INSERT INTO chat_messages(chat_id, role, content) VALUES(?, 'user', ?)", (chat_id, req.message.strip()))
+        c.execute(
+            "INSERT INTO chat_messages(chat_id, role, content, model, input_tokens, output_tokens) VALUES(?, 'assistant', ?, ?, ?, ?)",
+            (chat_id, reply, s["llm_model"], tokens[0], tokens[1]),
+        )
+        return {"chat_id": chat_id, "messages": _chat_messages(c, chat_id)}
+
+
+@app.delete("/api/chat/{chat_id}")
+def delete_chat(chat_id: int) -> dict:
+    with db.tx() as c:
+        c.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
     return {"ok": True}
 
 

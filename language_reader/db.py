@@ -111,6 +111,29 @@ CREATE TABLE IF NOT EXISTS usage (
 );
 
 CREATE INDEX IF NOT EXISTS idx_usage_time ON usage(created_at);
+-- Follow-up conversations about a word (kind 'word', ref = lemma id) or a
+-- phrase (kind 'phrase', ref = phrase id). Kept so answers are never paid for twice.
+CREATE TABLE IF NOT EXISTS chats (
+    id          INTEGER PRIMARY KEY,
+    kind        TEXT NOT NULL,
+    ref_id      INTEGER NOT NULL,
+    lang        TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (kind, ref_id)
+);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id             INTEGER PRIMARY KEY,
+    chat_id        INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+    role           TEXT NOT NULL,          -- user | assistant
+    content        TEXT NOT NULL,
+    model          TEXT,
+    input_tokens   INTEGER,
+    output_tokens  INTEGER,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_messages ON chat_messages(chat_id, id);
 CREATE INDEX IF NOT EXISTS idx_sentences_text ON sentences(text_id);
 CREATE INDEX IF NOT EXISTS idx_occ_lemma ON occurrences(lemma_id);
 CREATE INDEX IF NOT EXISTS idx_occ_text ON occurrences(text_id);

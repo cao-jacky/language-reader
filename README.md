@@ -16,6 +16,12 @@ your vocabulary builds up as you read.
   and a short note: verb aspect pairs for Russian, verb type and consonant
   gradation for Finnish, and compound parts (*rautatieasema* → rauta + tie +
   asema). Russian lemmas show stress marks.
+- **Ask follow-up questions.** Word and phrase cards have a chat box for
+  asking the model more ("why partitive here?", "more examples", "similar
+  words"). It already knows the word's analysis and the sentence it came
+  from. Conversations are saved per word and per phrase, so they reappear
+  wherever that word shows up (reader or vocabulary) and are never paid for
+  twice; follow-ups reuse the earlier turns through prompt caching.
 - **Select a phrase.** You get a natural translation, a literal one where it
   differs, and a note on any idiom or construction.
 - **Translate a passage.** Sentences are translated in batches and shown side
