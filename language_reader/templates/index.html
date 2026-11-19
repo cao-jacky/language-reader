@@ -608,7 +608,11 @@ let speakingBtn = null;
 function speak(text, lang, btn) {
   if (!canTTS) { toast("This browser can't read text aloud.", "error"); return; }
   if (speakingBtn && speakingBtn === btn && speechSynthesis.speaking) { speechSynthesis.cancel(); return; } // press again to stop
-  speechSynthesis.cancel();
+  // Only cancel when something is actually playing: cancelling an idle
+  // synthesiser resets the audio output in Chrome on macOS, which clicks.
+  // After a real cancel, give the old audio a moment to stop before starting.
+  const busy = speechSynthesis.speaking || speechSynthesis.pending;
+  if (busy) speechSynthesis.cancel();
   const voice = pickVoice(lang);
   if (!voice && VOICES.length) { toast(`No ${langName(lang)} voice on this device. See Settings → Speech.`, "error"); return; }
   const u = new SpeechSynthesisUtterance(stripStress(text));
@@ -619,7 +623,8 @@ function speak(text, lang, btn) {
   speakingBtn = btn || null;
   btn?.classList.add("speaking");
   u.onend = u.onerror = () => { btn?.classList.remove("speaking"); if (speakingBtn === btn) speakingBtn = null; };
-  speechSynthesis.speak(u);
+  const start = () => { if (speechSynthesis.paused) speechSynthesis.resume(); speechSynthesis.speak(u); };
+  if (busy) setTimeout(start, 120); else start();
 }
 const SPEAKER_SVG = '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M3 7.5h3l4-3.5v12l-4-3.5H3z"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M13 7.2a4 4 0 0 1 0 5.6M15.3 5a7 7 0 0 1 0 10"/></svg>';
 // A 🔊 button; getText is called on click so it always reads the current text.
