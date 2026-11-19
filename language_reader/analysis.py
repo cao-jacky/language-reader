@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 
-from . import db, languages, llm, morph
+from . import db, languages, llm, morph, usage
 CEFR = ["A1", "A2", "B1", "B2", "C1", "C2"]
 
 WORD_SCHEMA = {
@@ -91,6 +91,9 @@ def _cached(kind: str, s: dict, payload, fn):
     with db.tx() as c:
         row = c.execute("SELECT value FROM llm_cache WHERE key = ?", (key,)).fetchone()
     if row:
+        deepl = kind == "deepl"
+        usage.record(s, provider="deepl" if deepl else s["llm_provider"], model="deepl" if deepl else s["llm_model"],
+                     task={"sentences": "passage", "deepl": "passage"}.get(kind, kind), cached=True)
         return json.loads(row["value"])
     value = fn()
     with db.tx() as c:
@@ -129,7 +132,7 @@ Analyse the marked word as it is used in this sentence.
 {LANG_GUIDANCE.get(lang, GENERIC_GUIDANCE)}"""
 
     def run():
-        return llm.complete_json(s, _system(lang, s["target_language"]), user, WORD_SCHEMA, 2000)
+        return llm.complete_json(s, _system(lang, s["target_language"]), user, WORD_SCHEMA, 2000, task="word")
 
     if not use_cache:
         return run()
@@ -149,7 +152,7 @@ Translate the phrase as it is used in this context.
         "phrase",
         s,
         [lang, phrase, context],
-        lambda: llm.complete_json(s, _system(lang, s["target_language"]), user, PHRASE_SCHEMA, 1500),
+        lambda: llm.complete_json(s, _system(lang, s["target_language"]), user, PHRASE_SCHEMA, 1500, task="phrase"),
     )
 
 
@@ -172,7 +175,7 @@ Return `translations` with exactly {len(chunk)} strings, in the same order, with
 
     def run():
         data = llm.complete_json(
-            s, _system(lang, s["target_language"]), user, SENTENCES_SCHEMA, 400 + 250 * len(chunk)
+            s, _system(lang, s["target_language"]), user, SENTENCES_SCHEMA, 400 + 250 * len(chunk), task="passage"
         )
         tr = data["translations"]
         if len(tr) != len(chunk):

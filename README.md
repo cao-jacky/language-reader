@@ -38,6 +38,16 @@ your vocabulary builds up as you read.
   tailored grammar notes and offline analysers; other languages get general
   guidance (pinyin for Chinese, kana readings for Japanese, stress where it is
   unpredictable) and rely on the model alone.
+- **Stronger models on demand.** Pick a default model (Haiku 5.5 out of the
+  box) and any number of stronger ones on the same backend and key (Sonnet
+  5.5, Opus 5.5). Word, phrase and sentence cards say which model answered
+  and offer "Ask Sonnet 5.5" to re-run that one lookup with a stronger model;
+  its answer replaces the earlier one (a CEFR level you set by hand is kept).
+- **Usage and costs.** Every backend call is logged with its token counts and
+  an estimated cost. Settings shows this month and all time, a 30-day chart,
+  a breakdown by model and by task, cache hits, and DeepL characters against
+  the free quota. Anthropic list prices are built in; set your own for any
+  other model (0 for a local one).
 - **Settings page.** Choose the backend, model, base URL and API key in the
   browser. No restart needed.
 
@@ -127,7 +137,7 @@ only provide defaults for a fresh install; values saved in the page win.
 | `PORT` / `HOST` | `8080` / `0.0.0.0` | Listen address |
 | `AUTH_TOKEN` | unset | Require this token on every `/api` request. The page asks once and remembers it. |
 | `LLM_PROVIDER` | `anthropic` | `anthropic`, `openai` or `none` |
-| `LLM_MODEL` | `claude-haiku-5-5` | Model id |
+| `LLM_MODEL` | `claude-haiku-5-5` | Default model id |
 | `LLM_BASE_URL` | unset | Endpoint override; required for OpenAI-compatible servers other than OpenAI |
 | `LLM_API_KEY` / `ANTHROPIC_API_KEY` | unset | Fallback key when none is saved |
 | `LLM_EFFORT` | `low` | Claude effort level |

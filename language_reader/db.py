@@ -96,6 +96,21 @@ CREATE TABLE IF NOT EXISTS llm_cache (
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- One row per backend call (and per cache hit), for the usage & costs view.
+CREATE TABLE IF NOT EXISTS usage (
+    id             INTEGER PRIMARY KEY,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    provider       TEXT NOT NULL,
+    model          TEXT NOT NULL,
+    task           TEXT NOT NULL,
+    input_tokens   INTEGER,
+    output_tokens  INTEGER,
+    chars          INTEGER NOT NULL DEFAULT 0,
+    cached         INTEGER NOT NULL DEFAULT 0,
+    cost_usd       REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_usage_time ON usage(created_at);
 CREATE INDEX IF NOT EXISTS idx_sentences_text ON sentences(text_id);
 CREATE INDEX IF NOT EXISTS idx_occ_lemma ON occurrences(lemma_id);
 CREATE INDEX IF NOT EXISTS idx_occ_text ON occurrences(text_id);

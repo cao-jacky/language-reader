@@ -24,7 +24,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
-from . import analysis, db, languages, llm, morph, settings, textproc
+from . import analysis, db, languages, llm, morph, settings, textproc, usage
 
 AUTH_TOKEN = os.environ.get("AUTH_TOKEN", "").strip()
 TEMPLATE = Path(__file__).resolve().parent / "templates" / "index.html"
@@ -73,6 +73,14 @@ def _backend(fn, *args, **kwargs):
         return fn(*args, **kwargs)
     except llm.BackendError as e:
         raise HTTPException(502, str(e)) from e
+
+
+def _settings_for(model: str | None) -> dict:
+    """Settings for this request, escalated to another configured model if asked."""
+    try:
+        return settings.with_model(model)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
 
 
 def _text_or_404(c, tid: int):
@@ -228,6 +236,7 @@ def delete_text(tid: int) -> dict:
 class TranslateReq(BaseModel):
     sentence_ids: list[int] | None = None
     force: bool = False
+    model: str | None = None  # escalate to another configured model (retranslates)
 
 
 @app.post("/api/texts/{tid}/translate")
@@ -240,10 +249,10 @@ def translate_text(tid: int, req: TranslateReq) -> dict:
     if req.sentence_ids is not None:
         wanted = set(req.sentence_ids)
         rows = [r for r in rows if r["id"] in wanted]
-    if not req.force:
+    if not (req.force or req.model):
         rows = [r for r in rows if r["translation"] is None]
     if rows:
-        s = settings.load()
+        s = _settings_for(req.model)
         originals = [t["body"][r["start"] : r["end"]] for r in rows]
         out = _backend(analysis.translate_sentences, s, t["lang"], originals)
         with db.tx() as c:
@@ -271,6 +280,7 @@ class LookupReq(BaseModel):
     start: int
     end: int
     refresh: bool = False
+    model: str | None = None  # escalate to another configured model
 
 
 def _sentence_at(c, tid: int, pos: int):
@@ -293,7 +303,8 @@ def lookup(req: LookupReq) -> dict:
         raise HTTPException(400, "Word is outside any sentence")
     surface = body[req.start : req.end]
     sentence = body[sent["start"] : sent["end"]]
-    s = settings.load()
+    s = _settings_for(req.model)
+    escalated = bool(req.model)
     a = _backend(
         analysis.analyse_word, s, t["lang"], sentence, req.start - sent["start"], req.end - sent["start"],
         use_cache=not req.refresh,
@@ -304,7 +315,23 @@ def lookup(req: LookupReq) -> dict:
         row = c.execute(
             "SELECT * FROM lemmas WHERE lang = ? AND lemma = ? AND pos = ?", (t["lang"], lemma, pos)
         ).fetchone()
-        if row:
+        if row and escalated:
+            # A stronger model's answer replaces the earlier one, except a
+            # CEFR level the user set by hand.
+            c.execute(
+                """UPDATE lemmas SET stressed = ?, gloss = ?, other_meanings = ?, compound_parts = ?, notes = ?,
+                     cefr = CASE WHEN cefr_source = 'manual' THEN cefr ELSE ? END,
+                     cefr_source = CASE WHEN cefr_source = 'manual' THEN cefr_source ELSE ? END,
+                     updated_at = datetime('now')
+                   WHERE id = ?""",
+                (
+                    a["stressed"] or lemma, a["gloss"], json.dumps(a["other_meanings"], ensure_ascii=False),
+                    json.dumps(a["compound_parts"], ensure_ascii=False), a["notes"], a["cefr"] or None,
+                    f"LLM estimate ({s['llm_model']})" if a["cefr"] else None, row["id"],
+                ),
+            )
+            lemma_id = row["id"]
+        elif row:
             # Keep anything the user has edited; only fill gaps.
             c.execute(
                 """UPDATE lemmas SET
@@ -355,6 +382,7 @@ def lookup(req: LookupReq) -> dict:
         lrow = c.execute("SELECT * FROM lemmas WHERE id = ?", (lemma_id,)).fetchone()
     return {
         "analysis": a,
+        "model": s["llm_model"],
         "surface": surface,
         "lemma": _lemma_dict(lrow),
         "sentence": {"id": sent["id"], "text": sentence, "translation": sent["translation"]},
@@ -365,6 +393,7 @@ class PhraseReq(BaseModel):
     text_id: int
     start: int
     end: int
+    model: str | None = None
 
 
 @app.post("/api/phrases")
@@ -380,7 +409,7 @@ def add_phrase(req: PhraseReq) -> dict:
         ).fetchall()
     span = body[req.start : req.end]
     context = body[ctx[0]["start"] : ctx[-1]["end"]] if ctx else span
-    s = settings.load()
+    s = _settings_for(req.model)
     r = _backend(analysis.translate_phrase, s, t["lang"], span, context)
     with db.tx() as c:
         c.execute(
@@ -395,7 +424,7 @@ def add_phrase(req: PhraseReq) -> dict:
             "WHERE text_id = ? AND start = ? AND end = ?",
             (req.text_id, req.start, req.end),
         ).fetchone()
-    return dict(row)
+    return {**dict(row), "model": s["llm_model"]}
 
 
 @app.post("/api/texts/{tid}/sentences/{sid}/phrase")
@@ -625,6 +654,28 @@ def _languages_payload() -> dict:
 @app.get("/api/languages")
 def get_languages() -> dict:
     return _languages_payload()
+
+
+@app.get("/api/models")
+def get_models() -> dict:
+    s = settings.load()
+    return {"provider": s["llm_provider"], "default": s["llm_model"], "models": settings.models(s)}
+
+
+@app.get("/api/usage")
+def get_usage() -> dict:
+    s = settings.load()
+    table = usage.prices(s["llm_prices"])
+    return {
+        **usage.summary(),
+        "prices": {m: table.get(m) for m in settings.models(s)},
+    }
+
+
+@app.delete("/api/usage")
+def reset_usage() -> dict:
+    usage.reset()
+    return {"ok": True}
 
 
 # --------------------------------------------------------------------------- #

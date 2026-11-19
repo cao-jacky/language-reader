@@ -14,6 +14,8 @@ import re
 import urllib.error
 import urllib.request
 
+from . import usage
+
 
 class BackendError(Exception):
     pass
@@ -24,18 +26,20 @@ class BackendError(Exception):
 # --------------------------------------------------------------------------- #
 
 
-def complete_json(s: dict, system: str, user: str, schema: dict, max_tokens: int = 2000) -> dict:
+def complete_json(s: dict, system: str, user: str, schema: dict, max_tokens: int = 2000, task: str = "other") -> dict:
     provider = s["llm_provider"]
     if provider == "none":
         raise BackendError("No LLM backend is configured. Choose one on the Settings page.")
     if not s["llm_model"]:
         raise BackendError("No model is set. Enter one on the Settings page.")
     if provider == "anthropic":
-        data = _anthropic(s, system, user, schema, max_tokens)
+        data, tokens = _anthropic(s, system, user, schema, max_tokens)
     elif provider == "openai":
-        data = _openai(s, system, user, schema, max_tokens)
+        data, tokens = _openai(s, system, user, schema, max_tokens)
     else:
         raise BackendError(f"Unknown provider {provider!r}")
+    usage.record(s, provider=provider, model=s["llm_model"], task=task,
+                 input_tokens=tokens[0], output_tokens=tokens[1])
     return conform(data, schema)
 
 
@@ -77,8 +81,13 @@ def _anthropic(s: dict, system: str, user: str, schema: dict, max_tokens: int) -
         raise BackendError("The model declined this request.")
     if resp.stop_reason == "max_tokens":
         raise BackendError("The reply was cut off (max_tokens). Try a shorter selection.")
+    u = resp.usage
+    tokens = (
+        (u.input_tokens or 0) + (getattr(u, "cache_creation_input_tokens", 0) or 0) + (getattr(u, "cache_read_input_tokens", 0) or 0),
+        u.output_tokens or 0,  # includes thinking, which is billed as output
+    )
     text = next((b.text for b in resp.content if b.type == "text"), "")
-    return parse_json(text)
+    return parse_json(text), tokens
 
 
 def _openai(s: dict, system: str, user: str, schema: dict, max_tokens: int) -> dict:
@@ -113,7 +122,9 @@ def _openai(s: dict, system: str, user: str, schema: dict, max_tokens: int) -> d
         text = data["choices"][0]["message"]["content"] or ""
     except (KeyError, IndexError, TypeError) as e:
         raise BackendError(f"Unexpected reply shape from {url}") from e
-    return parse_json(text)
+    u = data.get("usage") or {}
+    tokens = (u.get("prompt_tokens"), u.get("completion_tokens"))  # None when the server doesn't report them
+    return parse_json(text), tokens
 
 
 def parse_json(text: str) -> dict:
@@ -186,6 +197,7 @@ def deepl_translate(s: dict, texts: list[str], source_lang: str) -> list[str]:
             msg = {403: "DeepL rejected the API key", 456: "DeepL quota exceeded"}.get(e.status, e.detail)
             raise BackendError(f"DeepL error {e.status}: {msg}") from e
         out.extend(t["text"] for t in data["translations"])
+        usage.record(s, provider="deepl", model="deepl", task="passage", chars=sum(len(t) for t in chunk))
     return out
 
 

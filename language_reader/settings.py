@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 
-from . import db, languages
+from . import db, languages, usage
 
 PROVIDERS = {"anthropic", "openai", "none"}
 PASSAGE_PROVIDERS = {"llm", "deepl"}
@@ -17,6 +17,11 @@ EFFORTS = {"", "low", "medium", "high", "xhigh", "max"}
 DEFAULTS = {
     "llm_provider": "anthropic",
     "llm_model": "claude-haiku-5-5",
+    # Stronger models on the same backend and key, offered as "ask a stronger
+    # model" in the reader. Comma-separated.
+    "llm_extra_models": "claude-sonnet-5-5",
+    # Per-model price overrides, JSON {model: {"in": usd_per_mtok, "out": ...}}.
+    "llm_prices": "{}",
     "llm_base_url": "",
     "llm_api_key": "",
     "llm_effort": "low",
@@ -40,6 +45,9 @@ ENV = {
 }
 
 SECRETS = ("llm_api_key", "deepl_api_key")
+# Keys where a saved empty value is a real choice ("model default", "no
+# stronger models", "default endpoint") rather than "not set".
+ALLOW_EMPTY = {"llm_effort", "llm_base_url", "llm_extra_models"}
 
 
 def _env(key: str) -> str | None:
@@ -56,7 +64,9 @@ def load() -> dict[str, str]:
     out = {}
     for k, default in DEFAULTS.items():
         v = saved.get(k)
-        out[k] = v if v not in (None, "") else (_env(k) or default)
+        if v is None or (v == "" and k not in ALLOW_EMPTY):
+            v = _env(k) or default
+        out[k] = v
     return out
 
 
@@ -99,6 +109,14 @@ def save(values: dict, clear: list[str] | None = None) -> None:
             errors.append("llm_timeout must be a whole number of seconds between 5 and 600")
     if "llm_base_url" in clean and clean["llm_base_url"] and not clean["llm_base_url"].startswith(("http://", "https://")):
         errors.append("llm_base_url must start with http:// or https://")
+    if "llm_extra_models" in clean:
+        models = [m.strip() for m in clean["llm_extra_models"].split(",") if m.strip()]
+        clean["llm_extra_models"] = ",".join(dict.fromkeys(models))
+    if "llm_prices" in clean:
+        try:
+            clean["llm_prices"] = usage.validate_prices(clean["llm_prices"])
+        except ValueError as e:
+            errors.append(str(e))
     if "languages" in clean:
         try:
             clean["languages"] = languages.validate(clean["languages"])
@@ -120,3 +138,19 @@ def save(values: dict, clear: list[str] | None = None) -> None:
 
 def configured_languages() -> list[str]:
     return languages.parse(load()["languages"]) or languages.parse(languages.DEFAULT)
+
+
+def models(s: dict) -> list[str]:
+    """The default model first, then the stronger ones to escalate to."""
+    extra = [m.strip() for m in s.get("llm_extra_models", "").split(",") if m.strip()]
+    return list(dict.fromkeys([s["llm_model"], *extra]))
+
+
+def with_model(model: str | None) -> dict:
+    """Settings for one request, optionally escalated to another configured model."""
+    s = load()
+    if model and model != s["llm_model"]:
+        if model not in models(s):
+            raise ValueError(f"{model} isn't one of your configured models")
+        s = {**s, "llm_model": model, "passage_provider": "llm"}
+    return s

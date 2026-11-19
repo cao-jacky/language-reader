@@ -183,6 +183,8 @@ button.star.btn { font-size: .88rem; border: 1px solid var(--border); padding: 5
 .st-btn.st-known.on { background: color-mix(in srgb, var(--known-line) 22%, transparent); color: var(--text); }
 .sent-box { border-top: 1px solid var(--border); margin-top: 14px; padding-top: 10px; }
 .sent-tr { font-size: .93rem; color: var(--muted); }
+.escalate { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0 2px; }
+.btn.esc-btn { padding: 3px 9px; font-size: .8rem; }
 .card-foot { display: flex; justify-content: space-between; gap: 12px; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); font-size: .88rem; }
 .phrase-src { font: 1.12rem/1.5 var(--serif); margin: 4px 0 10px; }
 .help p { margin: 0 0 8px; color: var(--muted); font-size: .92rem; }
@@ -271,6 +273,13 @@ dialog.word-dialog::backdrop { background: rgba(0,0,0,.4); }
 .test-result pre { white-space: pre-wrap; margin: 8px 0 0; font-size: .82rem; }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
 .dot.on { background: var(--ok); } .dot.off { background: var(--muted); opacity: .5; }
+.usage-bars { display: flex; align-items: flex-end; gap: 2px; height: 64px; margin-top: 6px; border-bottom: 1px solid var(--border); }
+.usage-bars > div { flex: 1; background: var(--accent); opacity: .8; border-radius: 2px 2px 0 0; }
+.usage-bars > div.zero { background: var(--border); opacity: 1; }
+.bars-axis { display: flex; justify-content: space-between; margin-top: 2px; }
+.meter { height: 8px; background: var(--surface-2); border-radius: 4px; overflow: hidden; margin: 4px 0 6px; }
+.meter > div { height: 100%; background: var(--accent); }
+input.price-input { width: 90px; padding: 4px 8px; }
 hr.sep { border: 0; border-top: 1px solid var(--border); margin: 20px 0; }
 
 #toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 50; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
@@ -315,6 +324,13 @@ hr.sep { border: 0; border-top: 1px solid var(--border); margin: 20px 0; }
 
 <script>
 "use strict";
+let MODELS = { default: "", models: [] };  // default model first, then stronger ones
+const MODEL_NAMES = {
+  "claude-haiku-5-5": "Haiku 5.5", "claude-sonnet-5-5": "Sonnet 5.5", "claude-opus-5-5": "Opus 5.5",
+  "claude-sonnet-5": "Sonnet 5", "claude-opus-5": "Opus 5", "claude-fable-5-2": "Fable 5.2",
+  "claude-haiku-4-5": "Haiku 4.5", "claude-sonnet-4-6": "Sonnet 4.6", "claude-opus-4-8": "Opus 4.8",
+};
+const modelLabel = (m) => MODEL_NAMES[m] || m;
 let LANGS = {};      // languages being learned: code -> name (from Settings)
 let LANG_NAMES = {};  // every language the app knows, for names of older data
 
@@ -592,9 +608,9 @@ async function translatePassage() {
   updateTranslateBtn();
 }
 
-async function translateSentences(ids) {
+async function translateSentences(ids, model = null) {
   const id = R.t.id;
-  const r = await api(`/api/texts/${id}/translate`, { method: "POST", body: { sentence_ids: ids } });
+  const r = await api(`/api/texts/${id}/translate`, { method: "POST", body: { sentence_ids: ids, model } });
   if (!R || R.t.id !== id) return;
   const m = new Map(r.sentences.map((s) => [s.id, s.translation]));
   for (const s of R.t.sentences) s.translation = m.get(s.id) ?? s.translation;
@@ -744,14 +760,23 @@ function onWordClick(ev) {
   lookupWord(+w.dataset.s, +w.dataset.e);
 }
 
-async function lookupWord(s, e, refresh = false) {
+// "Answered by X · Ask Y" row: re-run a lookup with a stronger configured model.
+function escalateRow(answeredBy, onAsk, { label = true } = {}) {
+  const others = MODELS.models.filter((m) => m !== answeredBy);
+  if (!others.length) return null;
+  return el("div", { class: "escalate" },
+    answeredBy && label ? el("span", { class: "muted small" }, `Answered by ${modelLabel(answeredBy)}`) : null,
+    others.map((m) => el("button", { type: "button", class: "btn esc-btn", title: `Ask ${m} instead`, onclick: () => onAsk(m) }, `Ask ${modelLabel(m)}`)));
+}
+
+async function lookupWord(s, e, refresh = false, model = null) {
   R.active = { s, e };
   applyMarks();
   const surface = R.t.body.slice(s, e);
-  panelShow(el("div", { class: "card" }, el("div", { class: "surface", lang: R.t.lang }, surface), el("div", { class: "spinner" }, "Looking up…")));
+  panelShow(el("div", { class: "card" }, el("div", { class: "surface", lang: R.t.lang }, surface), el("div", { class: "spinner" }, model ? `Asking ${modelLabel(model)}…` : "Looking up…")));
   try {
     const tid = R.t.id;
-    const r = await api("/api/lookup", { method: "POST", body: { text_id: tid, start: s, end: e, refresh } });
+    const r = await api("/api/lookup", { method: "POST", body: { text_id: tid, start: s, end: e, refresh, model } });
     if (!R || R.t.id !== tid || !R.active || R.active.s !== s || R.active.e !== e) return; // superseded
     const L = r.lemma;
     R.occ.set(s + ":" + e, { start: s, end: e, lemma_id: L.id, status: L.status, surface });
@@ -780,6 +805,7 @@ function renderWordCard(r) {
     a.compound_parts.length ? el("div", { class: "kv" }, el("span", { class: "k" }, "Compound"), a.compound_parts.join(" + ")) : null,
     a.other_meanings.length ? el("div", { class: "kv" }, el("span", { class: "k" }, "Also"), a.other_meanings.join("; ")) : null,
     a.notes ? el("div", { class: "notes" }, a.notes) : null,
+    escalateRow(r.model, (m) => lookupWord(R.active.s, R.active.e, false, m)),
     statusButtons(L),
     sentenceBlock(r.sentence),
     el("div", { class: "card-foot" },
@@ -814,7 +840,20 @@ async function setStatus(id, st) {
 function sentenceBlock(sent) {
   const box = el("div", { class: "sent-box" }, el("div", { class: "k" }, "Sentence"));
   const tr = R.t.sentences.find((x) => x.id === sent.id)?.translation ?? sent.translation;
-  if (tr) box.append(el("div", { class: "sent-tr" }, tr));
+  if (tr) {
+    const trEl = el("div", { class: "sent-tr" }, tr);
+    box.append(trEl);
+    const row = escalateRow(MODELS.default, async (m) => {
+      row.querySelectorAll("button").forEach((b) => (b.disabled = true));
+      trEl.textContent = `Asking ${modelLabel(m)}…`;
+      try {
+        await translateSentences([sent.id], m);
+        trEl.textContent = R.t.sentences.find((x) => x.id === sent.id)?.translation || "";
+      } catch (err) { toast(err.message, "error"); trEl.textContent = tr; }
+      row.querySelectorAll("button").forEach((b) => (b.disabled = false));
+    }, { label: false });
+    if (row) { row.prepend(el("span", { class: "muted small" }, "Retranslate:")); box.append(row); }
+  }
   else {
     const b = el("button", { class: "btn", style: "margin-top:6px", onclick: async () => {
       b.disabled = true; b.textContent = "Translating…";
@@ -940,15 +979,15 @@ if (COARSE) {
   document.addEventListener("selectionchange", () => { clearTimeout(t); t = setTimeout(onSelect, 400); });
 }
 
-async function translatePhrase(s, e) {
+async function translatePhrase(s, e, model = null) {
   hideSelBtn();
   getSelection().removeAllRanges();
   R.active = null;
   applyMarks();
   const span = R.t.body.slice(s, e);
-  panelShow(el("div", { class: "card" }, el("div", { class: "k" }, "Phrase"), el("div", { class: "phrase-src", lang: R.t.lang }, span), el("div", { class: "spinner" }, "Translating…")));
+  panelShow(el("div", { class: "card" }, el("div", { class: "k" }, "Phrase"), el("div", { class: "phrase-src", lang: R.t.lang }, span), el("div", { class: "spinner" }, model ? `Asking ${modelLabel(model)}…` : "Translating…")));
   try {
-    const p = await api("/api/phrases", { method: "POST", body: { text_id: R.t.id, start: s, end: e } });
+    const p = await api("/api/phrases", { method: "POST", body: { text_id: R.t.id, start: s, end: e, model } });
     R.t.phrases = R.t.phrases.filter((x) => x.id !== p.id).concat(p).sort((a, b) => a.start - b.start);
     applyMarks();
     renderPhraseCard(p);
@@ -962,6 +1001,7 @@ function renderPhraseCard(p) {
     el("div", { class: "gloss" }, p.translation),
     p.literal ? el("div", { class: "kv" }, el("span", { class: "k" }, "Literally"), p.literal) : null,
     p.notes ? el("div", { class: "notes" }, p.notes) : null,
+    p.kind === "sentence" ? null : escalateRow(p.model, (m) => translatePhrase(p.start, p.end, m)),
     el("div", { class: "card-foot" },
       el("button", { class: "link", onclick: renderPanelIdle }, "← Phrase book"),
       el("button", { class: "link danger", onclick: async () => {
@@ -1254,11 +1294,11 @@ function wordDetails(d, { meta = true } = {}) {
 
 // ------------------------------------------------------------------ settings
 const PRESETS = [
-  { label: "Claude Haiku 5.5", sub: "Cheapest Claude · recommended", v: { llm_provider: "anthropic", llm_model: "claude-haiku-5-5", llm_base_url: "", llm_effort: "low" } },
-  { label: "Claude Sonnet 5.5", sub: "Stronger, ~20× Haiku's price", v: { llm_provider: "anthropic", llm_model: "claude-sonnet-5-5", llm_base_url: "", llm_effort: "low" } },
-  { label: "Ollama", sub: "Local and free", v: { llm_provider: "openai", llm_model: "gemma3:12b", llm_base_url: "http://host.docker.internal:11434/v1", llm_effort: "" } },
-  { label: "OpenRouter", sub: "Many hosted models", v: { llm_provider: "openai", llm_model: "", llm_base_url: "https://openrouter.ai/api/v1", llm_effort: "" } },
-  { label: "Other OpenAI-compatible", sub: "LM Studio, vLLM, OpenAI…", v: { llm_provider: "openai", llm_model: "", llm_base_url: "", llm_effort: "" } },
+  { label: "Claude Haiku 5.5", sub: "Cheapest Claude · recommended", v: { llm_provider: "anthropic", llm_model: "claude-haiku-5-5", llm_base_url: "", llm_effort: "low" }, extra: ["claude-sonnet-5-5", "claude-opus-5-5"] },
+  { label: "Claude Sonnet 5.5", sub: "Stronger, ~20× Haiku's price", v: { llm_provider: "anthropic", llm_model: "claude-sonnet-5-5", llm_base_url: "", llm_effort: "low" }, extra: ["claude-opus-5-5"] },
+  { label: "Ollama", sub: "Local and free", v: { llm_provider: "openai", llm_model: "gemma3:12b", llm_base_url: "http://host.docker.internal:11434/v1", llm_effort: "" }, extra: [] },
+  { label: "OpenRouter", sub: "Many hosted models", v: { llm_provider: "openai", llm_model: "", llm_base_url: "https://openrouter.ai/api/v1", llm_effort: "" }, extra: [] },
+  { label: "Other OpenAI-compatible", sub: "LM Studio, vLLM, OpenAI…", v: { llm_provider: "openai", llm_model: "", llm_base_url: "", llm_effort: "" }, extra: [] },
 ];
 
 async function viewSettings() {
@@ -1289,6 +1329,24 @@ async function viewSettings() {
   const deeplField = el("label", { class: "field" }, el("span", {}, "DeepL API key"), el("div", { class: "key-row" }, deeplKey, clearDeepl), deeplHint);
   const presets = el("div", { class: "presets" });
   const result = el("div");
+  let extras = [];
+  const extraChips = el("div", { class: "lang-chips", style: "margin-bottom:8px" });
+  const extraInput = el("input", { type: "text", list: "model-list", autocomplete: "off", placeholder: "Model id, e.g. claude-sonnet-5-5" });
+  const addExtra = () => {
+    const m = extraInput.value.trim();
+    if (m && m !== model.value.trim() && !extras.includes(m)) extras.push(m);
+    extraInput.value = ""; drawExtras();
+  };
+  extraInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addExtra(); } });
+  function drawExtras() {
+    extraChips.replaceChildren(...(extras.length ? extras.map((m) => el("span", { class: "lang-chip" }, el("span", {}, modelLabel(m)),
+      el("span", { class: "code" }, m === modelLabel(m) ? "" : m),
+      el("button", { type: "button", title: `Remove ${m}`, "aria-label": `Remove ${m}`, onclick: () => { extras = extras.filter((x) => x !== m); drawExtras(); } }, "✕")))
+      : [el("span", { class: "muted small" }, "None. Lookups always use the default model.")]));
+  }
+  const extraField = el("div", { class: "field" }, el("span", { class: "field-label" }, "Stronger models"),
+    extraChips, el("div", { class: "add-lang" }, extraInput, el("button", { type: "button", class: "btn", onclick: addExtra }, "Add")),
+    el("small", { class: "detect-hint" }, "Same backend and API key. Word, phrase and sentence cards offer “Ask …” buttons to re-run a lookup with one of these when the default answer isn't good enough."));
   const baseField = el("label", { class: "field" }, el("span", {}, "Base URL"), baseUrl, baseHint);
 
   function keyText(k) {
@@ -1301,6 +1359,7 @@ async function viewSettings() {
     effort.value = S.llm_effort; timeout.value = S.llm_timeout; target.value = S.target_language;
     passLLM.checked = S.passage_provider !== "deepl"; passDeepL.checked = S.passage_provider === "deepl";
     apiKey.value = ""; deeplKey.value = ""; clear.clear();
+    extras = (S.llm_extra_models || "").split(",").map((x) => x.trim()).filter(Boolean); drawExtras();
     apiKey.placeholder = keyText(S.llm_api_key); deeplKey.placeholder = keyText(S.deepl_api_key);
     keyHint.textContent = S.llm_api_key.source === "environment" ? "A key saved here overrides the environment variable." : "Leave blank to keep the saved key.";
     deeplHint.textContent = "Free-tier keys end in :fx and are routed to api-free.deepl.com automatically.";
@@ -1317,6 +1376,7 @@ async function viewSettings() {
       : "The endpoint that ends in /v1. From inside Docker, reach a service on the host at host.docker.internal.";
     apiKey.closest(".field").style.display = p === "none" ? "none" : "";
     model.closest(".field").style.display = p === "none" ? "none" : "";
+    extraField.style.display = p === "none" ? "none" : "";
     deeplField.style.display = passDeepL.checked ? "" : "none";
     presets.querySelectorAll(".preset").forEach((b, i) => {
       const v = PRESETS[i].v;
@@ -1328,6 +1388,7 @@ async function viewSettings() {
 
   PRESETS.forEach((pr) => presets.append(el("button", { type: "button", class: "preset", onclick: () => {
     provider.value = pr.v.llm_provider; model.value = pr.v.llm_model; baseUrl.value = pr.v.llm_base_url; effort.value = pr.v.llm_effort;
+    extras = [...pr.extra]; drawExtras();
     sync();
     (pr.v.llm_model ? apiKey : model).focus();
   } }, el("b", {}, pr.label), el("small", {}, pr.sub))));
@@ -1336,12 +1397,15 @@ async function viewSettings() {
     const values = {
       llm_provider: provider.value, llm_model: model.value, llm_base_url: baseUrl.value, llm_effort: effort.value,
       llm_timeout: timeout.value, target_language: target.value, passage_provider: passDeepL.checked ? "deepl" : "llm",
+      llm_extra_models: extras.filter((m) => m !== model.value.trim()).join(","),
     };
     if (apiKey.value.trim()) values.llm_api_key = apiKey.value.trim();
     if (deeplKey.value.trim()) values.deepl_api_key = deeplKey.value.trim();
     const r = await api("/api/settings", { method: "PUT", body: { values, clear: [...clear] } });
     S = r.settings;
     fill();
+    MODELS = await api("/api/models");
+    loadUsage();
     if (!quiet) toast("Settings saved");
   }
 
@@ -1377,7 +1441,8 @@ async function viewSettings() {
     el("p", { class: "muted small", style: "margin-top:-6px" }, "Used for clicked words, selected phrases and, unless DeepL is chosen below, whole passages. Every answer is cached, so switching backends later only affects new lookups."),
     presets,
     el("label", { class: "field" }, el("span", {}, "Backend"), provider),
-    el("label", { class: "field" }, el("span", {}, "Model"), model, modelList, el("small", {}, "Any model id your backend accepts.")),
+    el("label", { class: "field" }, el("span", {}, "Default model"), model, modelList, el("small", {}, "Used for every lookup. Any model id your backend accepts.")),
+    extraField,
     baseField,
     el("label", { class: "field" }, el("span", {}, "API key"), el("div", { class: "key-row" }, apiKey, clearKey), keyHint),
     effortField,
@@ -1449,12 +1514,98 @@ async function viewSettings() {
       el("h2", {}, "Where keys are stored"),
       el("p", { class: "muted small", style: "margin:0" }, "Keys saved here live in reader.db in your data volume and are never sent back to the browser. Environment variables (LLM_API_KEY, ANTHROPIC_API_KEY, DEEPL_API_KEY) are used when nothing is saved.")));
 
-  view.replaceChildren(el("div", { class: "page-head" }, el("h1", {}, "Settings")), el("div", { class: "settings-grid" }, el("div", {}, langCard, form), side));
+  // Usage & costs ----------------------------------------------------------
+  const usageBox = el("div", {}, el("div", { class: "spinner" }, "Loading…"));
+  const resetUsage = el("button", { type: "button", class: "link danger small", onclick: async () => {
+    if (!confirm("Clear the usage history? Cached answers are kept.")) return;
+    await api("/api/usage", { method: "DELETE" }); loadUsage();
+  } }, "Clear history");
+  const usageCard = el("div", { class: "form-card", style: "max-width:none;margin-top:20px" },
+    el("div", { class: "wc-top" }, el("h2", { style: "margin:0" }, "Usage & costs"), resetUsage),
+    el("p", { class: "muted small", style: "margin:4px 0 14px" }, "Estimated from the token counts each backend reports, at the prices below. Your provider's bill is authoritative."),
+    usageBox);
+  const money = (x) => x == null ? "—" : x === 0 ? "$0.00" : x < 0.01 ? "$" + x.toFixed(4) : "$" + x.toFixed(2);
+  const num = (n) => (n || 0).toLocaleString();
+  const tile = (label, value, sub) => el("div", { class: "stat" }, el("div", { class: "muted small" }, label), el("div", { class: "n" }, value), el("div", { class: "muted small" }, sub));
+  async function loadUsage() {
+    try { drawUsage(await api("/api/usage")); } catch (err) { usageBox.replaceChildren(errorCard(err)); }
+  }
+  function drawUsage(u) {
+    const m = u.month;
+    const parts = [el("div", { class: "stats-strip" },
+      tile("This month", money(m.cost), `${num(m.requests)} requests`),
+      tile("Tokens this month", num(m.input_tokens + m.output_tokens), `${num(m.input_tokens)} in · ${num(m.output_tokens)} out`),
+      tile("From cache", num(m.cache_hits), "answers that cost nothing"),
+      tile("All time", money(u.all_time.cost), `${num(u.all_time.requests)} requests`))];
+    if (m.unpriced) parts.push(el("div", { class: "notes" }, `${num(m.unpriced)} requests this month have no cost estimate: the model has no price below, or the server didn't report token counts.`));
+    if (m.deepl_chars || S.passage_provider === "deepl") {
+      const pct = Math.min(100, (100 * m.deepl_chars) / u.deepl_free_chars);
+      parts.push(el("div", { class: "kv" }, el("span", { class: "k" }, "DeepL"), `${num(m.deepl_chars)} of ${num(u.deepl_free_chars)} free characters this month`),
+        el("div", { class: "meter" }, el("div", { style: `width:${pct}%` })));
+    }
+    // Last 30 days, one bar per day.
+    const byDay = Object.fromEntries(u.daily.map((d) => [d.day, d]));
+    const days = [...Array(30)].map((_, i) => { const d = new Date(Date.now() - (29 - i) * 864e5); return d.toISOString().slice(0, 10); });
+    const useCost = u.daily.some((d) => d.cost > 0);
+    const val = (d) => (byDay[d] ? (useCost ? byDay[d].cost : byDay[d].requests) : 0);
+    const max = Math.max(...days.map(val)) || 1;
+    parts.push(el("div", { class: "k", style: "margin-top:14px" }, `Last 30 days · ${useCost ? "cost" : "requests"} per day`),
+      el("div", { class: "usage-bars", role: "img", "aria-label": "Daily usage for the last 30 days" }, days.map((d) => el("div", {
+        style: `height:${Math.max(val(d) ? 4 : 1, (100 * val(d)) / max)}%`, class: val(d) ? "" : "zero",
+        title: `${d}: ${byDay[d] ? `${money(byDay[d].cost)} · ${byDay[d].requests} requests` : "nothing"}` }))),
+      el("div", { class: "bars-axis muted small" }, el("span", {}, fmtDate(days[0] + " 00:00:00")), el("span", {}, "today")));
+    if (u.by_model.length) {
+      parts.push(el("div", { class: "k", style: "margin-top:16px" }, "This month by model"),
+        el("div", { class: "table-wrap", style: "margin-top:6px" }, el("table", {},
+          el("thead", {}, el("tr", {}, ["Model", "Requests", "Tokens in", "Tokens out", "Cost"].map((h) => el("th", {}, h)))),
+          el("tbody", {}, u.by_model.map((r) => el("tr", {},
+            el("td", {}, modelLabel(r.model), r.model !== modelLabel(r.model) ? el("div", { class: "muted small" }, r.model) : null),
+            el("td", {}, num(r.requests)), el("td", {}, num(r.input_tokens)), el("td", {}, num(r.output_tokens)), el("td", {}, money(r.cost))))))));
+    }
+    if (u.by_task.length) {
+      const names = { word: "Words", phrase: "Phrases", passage: "Passages" };
+      parts.push(el("div", { class: "muted small", style: "margin-top:8px" },
+        "By task: " + u.by_task.map((t) => `${names[t.task] || t.task} ${money(t.cost)} (${num(t.requests)})`).join(" · ")));
+    }
+    // Prices for the configured models, editable.
+    const inputs = [];
+    const rows = Object.entries(u.prices).map(([model, p]) => {
+      const pin = el("input", { type: "text", inputmode: "decimal", class: "price-input", value: p ? String(p.in) : "", placeholder: "—", "aria-label": `${model} input price` });
+      const pout = el("input", { type: "text", inputmode: "decimal", class: "price-input", value: p ? String(p.out) : "", placeholder: "—", "aria-label": `${model} output price` });
+      inputs.push([model, pin, pout]);
+      return el("tr", {}, el("td", {}, modelLabel(model), model !== modelLabel(model) ? el("div", { class: "muted small" }, model) : null),
+        el("td", {}, pin), el("td", {}, pout), el("td", { class: "muted small" }, p ? p.source : "not set"));
+    });
+    const savePrices = el("button", { type: "button", class: "btn", onclick: async () => {
+      let saved = {};
+      try { saved = JSON.parse(S.llm_prices || "{}"); } catch {}
+      for (const [model, pin, pout] of inputs) {
+        if (pin.value.trim() === "" && pout.value.trim() === "") { delete saved[model]; continue; }
+        saved[model] = { in: Number(pin.value), out: Number(pout.value) };
+      }
+      try {
+        const r = await api("/api/settings", { method: "PUT", body: { values: { llm_prices: JSON.stringify(saved) } } });
+        S = r.settings; toast("Prices saved; they apply to new requests"); loadUsage();
+      } catch (err) { toast(err.message, "error"); }
+    } }, "Save prices");
+    parts.push(el("div", { class: "k", style: "margin-top:18px" }, "Prices (USD per million tokens)"),
+      el("div", { class: "table-wrap", style: "margin-top:6px" }, el("table", {},
+        el("thead", {}, el("tr", {}, ["Model", "Input", "Output", ""].map((h) => el("th", {}, h)))), el("tbody", {}, rows))),
+      el("div", { style: "margin-top:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap" }, savePrices,
+        el("span", { class: "muted small" }, "Anthropic list prices are filled in. Set 0 for a local model, or your provider's prices for others.")));
+    usageBox.replaceChildren(...parts);
+  }
+  loadUsage();
+
+  view.replaceChildren(el("div", { class: "page-head" }, el("h1", {}, "Settings")), el("div", { class: "settings-grid" }, el("div", {}, langCard, form, usageCard), side));
   fill();
 }
 
 (async () => {
-  try { setLanguages(await api("/api/languages")); }
+  try {
+    const [langs, models] = await Promise.all([api("/api/languages"), api("/api/models")]);
+    setLanguages(langs); MODELS = models;
+  }
   catch (e) { view.replaceChildren(errorCard(e)); return; }
   route();
 })();
