@@ -240,7 +240,7 @@ hr.sep { border: 0; border-top: 1px solid var(--border); margin: 20px 0; }
     <a class="brand" href="#/"><span class="mark">Aa</span><span>Language Reader</span></a>
     <nav>
       <a href="#/">Library</a>
-      <a href="#/new">New text</a>
+      <a href="#/new">Paste text</a>
       <a href="#/vocab">Vocabulary</a>
       <a href="#/settings">Settings</a>
     </nav>
@@ -372,8 +372,8 @@ async function viewLibrary() {
     const shown = lang ? texts.filter((t) => t.lang === lang) : texts;
     if (!shown.length) {
       list.replaceChildren(el("div", { class: "empty" },
-        el("p", {}, texts.length ? "No texts in this language yet." : "Paste a passage in Russian or Finnish to start reading."),
-        el("a", { class: "btn primary", href: "#/new" }, "New text")));
+        el("p", {}, texts.length ? "No texts in this language yet." : "Paste some text to start reading."),
+        el("a", { class: "btn primary", href: "#/new" }, "Paste text")));
       return;
     }
     list.replaceChildren(el("div", { class: "cards" }, shown.map((t) =>
@@ -388,7 +388,7 @@ async function viewLibrary() {
   }
   draw();
   view.replaceChildren(
-    el("div", { class: "page-head" }, el("h1", {}, "Library"), el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, seg, el("a", { class: "btn primary", href: "#/new" }, "+ New text"))),
+    el("div", { class: "page-head" }, el("h1", {}, "Library"), el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, seg, el("a", { class: "btn primary", href: "#/new" }, "+ Paste text"))),
     strip, list);
 }
 
@@ -421,7 +421,7 @@ function viewNew() {
       el("label", { class: "field" }, el("span", {}, "Source"), src)),
     el("label", { class: "field" }, el("span", {}, "Text"), body),
     submit);
-  view.replaceChildren(el("div", { class: "page-head" }, el("h1", {}, "New text")), form);
+  view.replaceChildren(el("div", { class: "page-head" }, el("h1", {}, "Paste text")), form);
   body.focus();
 }
 
