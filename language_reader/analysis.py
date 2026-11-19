@@ -5,9 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 
-from . import db, llm, morph
-
-LANG_NAMES = {"ru": "Russian", "fi": "Finnish"}
+from . import db, languages, llm, morph
 CEFR = ["A1", "A2", "B1", "B2", "C1", "C2"]
 
 WORD_SCHEMA = {
@@ -48,6 +46,15 @@ SENTENCES_SCHEMA = {
     "additionalProperties": False,
 }
 
+GENERIC_GUIDANCE = (
+    "In `stressed`, give the lemma with whatever pronunciation aid a learner of this language "
+    "would want: stress marks for languages with unpredictable stress (Ukrainian, Bulgarian), "
+    "pinyin with tone marks for Chinese, the kana reading for Japanese words written in kanji, "
+    "vowel points or a transliteration for scripts that omit vowels; otherwise repeat the lemma. "
+    "Mention notable irregularities, gender, or verb class in `notes`. Use `compound_parts` only "
+    "for compound words."
+)
+
 LANG_GUIDANCE = {
     "ru": (
         "Russian specifics: in `stressed`, write the lemma with an acute accent (U+0301) "
@@ -67,7 +74,7 @@ LANG_GUIDANCE = {
 
 def _system(lang: str, target: str) -> str:
     return (
-        f"You are a precise linguistics assistant for an adult learning {LANG_NAMES[lang]}. "
+        f"You are a precise linguistics assistant for an adult learning {languages.name(lang)}. "
         f"The learner's working language is {target}: write every gloss, translation and "
         f"note in {target}. Be accurate and concise. Reply with a single JSON object that "
         f"matches the requested schema."
@@ -116,10 +123,10 @@ Analyse the marked word as it is used in this sentence.
 - gloss: its meaning in this sentence, 1–6 words.
 - other_meanings: up to 4 other common meanings of the lemma (may be empty).
 - compound_parts: parts of a compound word, otherwise empty.
-- cefr: the CEFR level (A1–C2) at which a learner typically meets this lemma, judged by frequency and standard curricula (TORFL lexical minimums for Russian, YKI levels for Finnish).
+- cefr: the CEFR level (A1–C2) at which a learner typically meets this lemma, judged by frequency and standard curricula (for example TORFL lexical minimums for Russian, YKI levels for Finnish, HSK for Chinese).
 - notes: one or two short sentences on anything a learner should know (irregular forms, government, idiomatic use); empty if nothing notable.
 
-{LANG_GUIDANCE[lang]}"""
+{LANG_GUIDANCE.get(lang, GENERIC_GUIDANCE)}"""
 
     def run():
         return llm.complete_json(s, _system(lang, s["target_language"]), user, WORD_SCHEMA, 2000)
@@ -157,7 +164,7 @@ def translate_sentences(s: dict, lang: str, sentences: list[str]) -> list[str]:
 
 def _translate_chunk(s: dict, lang: str, chunk: list[str]) -> list[str]:
     numbered = "\n".join(f"{i + 1}. {t}" for i, t in enumerate(chunk))
-    user = f"""Translate each numbered {LANG_NAMES[lang]} sentence into natural {s['target_language']}. The sentences are consecutive, so use the surrounding ones for context.
+    user = f"""Translate each numbered {languages.name(lang)} sentence into natural {s['target_language']}. The sentences are consecutive, so use the surrounding ones for context.
 
 {numbered}
 

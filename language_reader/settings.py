@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 
-from . import db
+from . import db, languages
 
 PROVIDERS = {"anthropic", "openai", "none"}
 PASSAGE_PROVIDERS = {"llm", "deepl"}
@@ -24,6 +24,7 @@ DEFAULTS = {
     "passage_provider": "llm",
     "deepl_api_key": "",
     "target_language": "English",
+    "languages": languages.DEFAULT,
 }
 
 ENV = {
@@ -35,6 +36,7 @@ ENV = {
     "passage_provider": ("PASSAGE_PROVIDER",),
     "deepl_api_key": ("DEEPL_API_KEY",),
     "target_language": ("TARGET_LANGUAGE",),
+    "languages": ("LANGUAGES",),
 }
 
 SECRETS = ("llm_api_key", "deepl_api_key")
@@ -97,6 +99,11 @@ def save(values: dict, clear: list[str] | None = None) -> None:
             errors.append("llm_timeout must be a whole number of seconds between 5 and 600")
     if "llm_base_url" in clean and clean["llm_base_url"] and not clean["llm_base_url"].startswith(("http://", "https://")):
         errors.append("llm_base_url must start with http:// or https://")
+    if "languages" in clean:
+        try:
+            clean["languages"] = languages.validate(clean["languages"])
+        except ValueError as e:
+            errors.append(str(e))
     if errors:
         raise ValueError("; ".join(errors))
     with db.tx() as c:
@@ -109,3 +116,7 @@ def save(values: dict, clear: list[str] | None = None) -> None:
         for k in clear or []:
             if k in SECRETS:
                 c.execute("DELETE FROM settings WHERE key = ?", (k,))
+
+
+def configured_languages() -> list[str]:
+    return languages.parse(load()["languages"]) or languages.parse(languages.DEFAULT)

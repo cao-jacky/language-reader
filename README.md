@@ -1,7 +1,8 @@
 # Language Reader
 
-A small self-hosted reader for learning **Russian** and **Finnish**. Paste a
-text, click any word to see its dictionary form, its meaning in that sentence,
+A small self-hosted reader for learning languages, built around **Russian** and
+**Finnish** but configurable to any of about a hundred others. Paste a text,
+and its language is detected automatically. Click any word to see its dictionary form, its meaning in that sentence,
 its grammatical form and an estimated CEFR level, select a few words to
 translate them as a phrase, or translate the whole passage sentence by
 sentence. Every word and phrase you look up is kept in a SQLite database, so
@@ -24,6 +25,14 @@ your vocabulary builds up as you read.
   colours them accordingly in every text. Filter by language, status and CEFR
   level, search by word form or meaning, and export to CSV (for Anki or a
   spreadsheet).
+- **Your languages.** Add or remove the languages you're learning on the
+  Settings page. Pasted text is auto-detected among them with
+  [py3langid](https://github.com/adbar/py3langid), offline; text in a language
+  you haven't added is named ("looks like Swedish") so you can add it.
+  Removing a language keeps its texts and words. Russian and Finnish get
+  tailored grammar notes and offline analysers; other languages get general
+  guidance (pinyin for Chinese, kana readings for Japanese, stress where it is
+  unpredictable) and rely on the model alone.
 - **Settings page.** Choose the backend, model, base URL and API key in the
   browser. No restart needed.
 
@@ -120,6 +129,7 @@ only provide defaults for a fresh install; values saved in the page win.
 | `PASSAGE_PROVIDER` | `llm` | `llm` or `deepl` |
 | `DEEPL_API_KEY` | unset | Fallback DeepL key |
 | `TARGET_LANGUAGE` | `English` | Language for glosses and translations |
+| `LANGUAGES` | `ru,fi` | Initial languages being learned (ISO 639-1 codes) |
 
 The compose file passes through `AUTH_TOKEN`, `ANTHROPIC_API_KEY` and
 `DEEPL_API_KEY`; add any of the others under `environment:` if you want them.

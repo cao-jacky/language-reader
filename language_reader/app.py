@@ -24,11 +24,10 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
-from . import analysis, db, llm, morph, settings, textproc
+from . import analysis, db, languages, llm, morph, settings, textproc
 
 AUTH_TOKEN = os.environ.get("AUTH_TOKEN", "").strip()
 TEMPLATE = Path(__file__).resolve().parent / "templates" / "index.html"
-LANGS = set(analysis.LANG_NAMES)
 STATUSES = {"new", "learning", "known"}
 
 @asynccontextmanager
@@ -144,14 +143,21 @@ def create_text(req: NewText) -> dict:
     body = req.body.replace("\r\n", "\n").strip()
     if not body:
         raise HTTPException(400, "The text is empty")
+    configured = settings.configured_languages()
     lang = req.lang
     if lang == "auto":
-        lang = textproc.detect_lang(body)
+        d = languages.detect(body, configured)
+        lang = d["lang"]
         if not lang:
-            names = " or ".join(analysis.LANG_NAMES.values())
-            raise HTTPException(400, f"Couldn't detect the language. Choose {names} instead of auto-detect.")
-    if lang not in LANGS:
-        raise HTTPException(400, "lang must be auto, " + ", ".join(sorted(LANGS)))
+            if d["guess"]:
+                raise HTTPException(
+                    400,
+                    f"This looks like {languages.name(d['guess'])}, which isn't one of your languages. "
+                    "Add it in Settings, or choose a language instead of auto-detect.",
+                )
+            raise HTTPException(400, "Couldn't detect the language. Choose one instead of auto-detect.")
+    if lang not in configured:
+        raise HTTPException(400, f"{languages.name(lang)} isn't one of your languages. Add it in Settings first.")
     title = req.title.strip() or textproc.default_title(body)
     spans = textproc.split_sentences(body)
     with db.tx() as c:
@@ -566,6 +572,32 @@ def stats() -> dict:
     return out
 
 
+class DetectReq(BaseModel):
+    text: str = Field(max_length=200_000)
+
+
+@app.post("/api/detect")
+def detect(req: DetectReq) -> dict:
+    d = languages.detect(req.text, settings.configured_languages())
+    return {
+        **d,
+        "name": languages.name(d["lang"]) if d["lang"] else None,
+        "guess_name": languages.name(d["guess"]) if d["guess"] else None,
+    }
+
+
+def _languages_payload() -> dict:
+    return {
+        "configured": languages.describe(settings.configured_languages()),
+        "available": languages.available(),
+    }
+
+
+@app.get("/api/languages")
+def get_languages() -> dict:
+    return _languages_payload()
+
+
 # --------------------------------------------------------------------------- #
 # settings
 # --------------------------------------------------------------------------- #
@@ -578,7 +610,7 @@ class SettingsReq(BaseModel):
 
 @app.get("/api/settings")
 def get_settings() -> dict:
-    return {"settings": settings.public(), "analysers": morph.status()}
+    return {"settings": settings.public(), "analysers": morph.status(), "languages": _languages_payload()}
 
 
 @app.put("/api/settings")
@@ -587,7 +619,7 @@ def put_settings(req: SettingsReq) -> dict:
         settings.save(req.values, req.clear)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
-    return {"settings": settings.public(), "analysers": morph.status()}
+    return {"settings": settings.public(), "analysers": morph.status(), "languages": _languages_payload()}
 
 
 @app.post("/api/settings/test")

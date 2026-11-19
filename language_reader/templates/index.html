@@ -94,8 +94,18 @@ div.field { margin-bottom: 14px; }
 
 .badge { display: inline-block; font-size: .72rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase;
   padding: 2px 7px; border-radius: 4px; background: var(--surface-2); color: var(--muted); }
-.badge.lang-ru { background: color-mix(in srgb, #c0392b 14%, transparent); color: color-mix(in srgb, #c0392b 80%, var(--text)); }
-.badge.lang-fi { background: color-mix(in srgb, #1f6fb2 14%, transparent); color: color-mix(in srgb, #1f6fb2 80%, var(--text)); }
+.badge.lang { background: hsl(var(--h) 60% 50% / .14); color: hsl(var(--h) 55% 36%); }
+@media (prefers-color-scheme: dark) { .badge.lang { color: hsl(var(--h) 65% 72%); } }
+.seg-wrap { flex-wrap: wrap; }
+.lang-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.lang-chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border); background: var(--surface-2);
+  border-radius: 999px; padding: 3px 4px 3px 12px; }
+.lang-chip .code { color: var(--muted); font-size: .78rem; }
+.lang-chip button { border: 0; background: none; cursor: pointer; color: var(--muted); width: 24px; height: 24px; border-radius: 50%; }
+.lang-chip button:hover { background: var(--border); color: var(--danger); }
+.lang-chip button:disabled { opacity: .3; cursor: default; background: none; color: var(--muted); }
+.add-lang { display: flex; gap: 8px; }
+.add-lang select { flex: 1; }
 .cefr { display: inline-block; font: 700 .72rem var(--sans); padding: 2px 6px; border-radius: 4px; border: 1px solid currentColor; }
 .cefr-A { color: var(--cefr-a); } .cefr-B { color: var(--cefr-b); } .cefr-C { color: var(--cefr-c); }
 
@@ -259,7 +269,26 @@ hr.sep { border: 0; border-top: 1px solid var(--border); margin: 20px 0; }
 
 <script>
 "use strict";
-const LANGS = { ru: "Russian", fi: "Finnish" };
+let LANGS = {};      // languages being learned: code -> name (from Settings)
+let LANG_NAMES = {};  // every language the app knows, for names of older data
+
+function setLanguages(r) {
+  LANGS = Object.fromEntries(r.configured.map((l) => [l.code, l.name]));
+  LANG_NAMES = Object.fromEntries(r.available.map((l) => [l.code, l.name]));
+}
+const langName = (c) => LANGS[c] || LANG_NAMES[c] || c;
+// Configured languages first, then any others that still have saved data.
+function langsWithData(stats, extra = []) {
+  const codes = Object.keys(LANGS);
+  for (const c of [...Object.keys(stats || {}), ...extra]) if (!codes.includes(c)) codes.push(c);
+  return codes;
+}
+function langHue(code) {
+  let h = 0;
+  for (const ch of code) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  return { ru: 4, fi: 210 }[code] ?? h;
+}
+const langBadge = (code) => el("span", { class: "badge lang", style: `--h:${langHue(code)}` }, langName(code));
 const STATUS_LABEL = { new: "New", learning: "Learning", known: "Known" };
 const CEFR = ["A1", "A2", "B1", "B2", "C1", "C2"];
 const view = document.getElementById("view");
@@ -358,10 +387,12 @@ window.addEventListener("hashchange", route);
 // ------------------------------------------------------------------ library
 async function viewLibrary() {
   const [texts, stats] = await Promise.all([api("/api/texts"), api("/api/stats")]);
+  const codes = langsWithData(stats, texts.map((t) => t.lang));
   let lang = pref.get("lib.lang");
+  if (lang && !codes.includes(lang)) lang = "";
   const list = el("div");
   const seg = el("div", { class: "seg" });
-  for (const [k, label] of [["", "All"], ["ru", "Russian"], ["fi", "Finnish"]]) {
+  for (const [k, label] of [["", "All"], ...codes.map((c) => [c, langName(c)])]) {
     seg.append(el("button", { class: lang === k ? "on" : "", onclick: (e) => {
       lang = k; pref.set("lib.lang", k);
       seg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === e.currentTarget));
@@ -369,10 +400,10 @@ async function viewLibrary() {
     } }, label));
   }
   const strip = el("div", { class: "stats-strip" });
-  for (const [k, name] of Object.entries(LANGS)) {
+  for (const k of codes) {
     const s = stats[k] || { total: 0, by_status: {}, by_cefr: {} };
     strip.append(el("div", { class: "stat" },
-      el("div", { class: "muted small" }, name),
+      el("div", { class: "muted small" }, langName(k)),
       el("div", { class: "n" }, s.total, el("span", { class: "muted small" }, " words")),
       el("div", { class: "muted small" }, `${s.texts || 0} texts · ${s.phrases || 0} phrases · ${s.by_status.known || 0} known`)));
   }
@@ -386,7 +417,7 @@ async function viewLibrary() {
     }
     list.replaceChildren(el("div", { class: "cards" }, shown.map((t) =>
       el("a", { class: "text-card", href: `#/text/${t.id}` },
-        el("span", { class: "badge lang-" + t.lang }, LANGS[t.lang]),
+        langBadge(t.lang),
         el("h3", { lang: t.lang }, t.title),
         el("div", { class: "preview", lang: t.lang }, t.preview),
         el("div", { class: "meta" },
@@ -401,31 +432,10 @@ async function viewLibrary() {
 }
 
 // ------------------------------------------------------------------ new text
-// Mirrors textproc.detect_lang on the server, for live feedback while pasting.
-const FI_WORDS = new Set("ja on ei se että kun mutta niin oli ovat myös tai joka jos hän minä sinä me te he olen ole olla tämä tuo nyt vain kuin sitten jo vielä koska mitä mikä kanssa olisi voi pitää eikä siis sen sitä hänen".split(" "));
-function detectLang(text) {
-  const letters = [...text].filter((c) => /\p{L}/u.test(c));
-  const n = letters.length;
-  const cyr = letters.filter((c) => c >= "Ѐ" && c <= "ӿ").length;
-  if (cyr >= 3 && cyr / n > 0.5) {
-    const other = letters.filter((c) => "іїєґўІЇЄҐЎ".includes(c)).length;
-    return other / n > 0.01 ? null : "ru";
-  }
-  if (n < 15) return null;
-  const lower = text.toLowerCase();
-  const words = lower.match(/\p{L}+/gu) || [];
-  if (!words.length) return null;
-  const hits = words.filter((w) => FI_WORDS.has(w)).length / words.length;
-  const ao = [...lower].filter((c) => c === "ä" || c === "ö").length / n;
-  const foreign = [...lower].filter((c) => "bcfqwxzüßåõ".includes(c)).length / n;
-  if (foreign >= 0.025) return null;
-  return hits >= 0.06 || ao >= 0.02 ? "fi" : null;
-}
-
 function viewNew() {
   let lang = pref.get("new.lang", "auto");
   if (lang !== "auto" && !LANGS[lang]) lang = "auto";
-  const seg = el("div", { class: "seg" });
+  const seg = el("div", { class: "seg seg-wrap" });
   const hint = el("small", { class: "detect-hint" });
   for (const [k, name] of [["auto", "Auto-detect"], ...Object.entries(LANGS)]) {
     seg.append(el("button", { type: "button", class: lang === k ? "on" : "", onclick: (e) => {
@@ -438,23 +448,30 @@ function viewNew() {
   const src = el("input", { type: "url", placeholder: "https://…" });
   const body = el("textarea", { rows: 16, required: true, placeholder: "Paste the text you want to read…" });
   const submit = el("button", { class: "btn primary", type: "submit" }, "Start reading");
-  let detected = null;
-  function updateHint() {
-    detected = detectLang(body.value);
-    const effective = lang === "auto" ? detected : lang;
-    body.setAttribute("lang", effective || "");
-    if (lang !== "auto") { hint.textContent = ""; return; }
-    hint.className = "detect-hint" + (body.value.trim() && !detected ? " warn" : "");
-    hint.textContent = !body.value.trim() ? "The language is detected from the text."
-      : detected ? `Detected: ${LANGS[detected]}` : "Couldn't tell which language this is. Choose one.";
+  let detected = null, seq = 0;
+  async function updateHint() {
+    const text = body.value;
+    const mine = ++seq;
+    let d = { lang: null, guess: null };
+    if (text.trim()) {
+      try { d = await api("/api/detect", { method: "POST", body: { text: text.slice(0, 4000) } }); } catch { /* keep the old hint */ return; }
+    }
+    if (mine !== seq) return; // a newer keystroke won
+    detected = d.lang;
+    body.setAttribute("lang", (lang === "auto" ? detected : lang) || "");
+    if (lang !== "auto") { hint.replaceChildren(); return; }
+    hint.className = "detect-hint" + (text.trim() && !detected ? " warn" : "");
+    if (!text.trim()) hint.replaceChildren("The language is detected from the text.");
+    else if (detected) hint.replaceChildren(`Detected: ${langName(detected)}`);
+    else if (d.guess) hint.replaceChildren(`This looks like ${d.guess_name}, which isn't one of your languages. `,
+      el("a", { href: "#/settings" }, "Add it in Settings"), " or choose a language above.");
+    else hint.replaceChildren("Couldn't tell which language this is yet. Paste more text or choose one.");
   }
   let t;
-  body.addEventListener("input", () => { clearTimeout(t); t = setTimeout(updateHint, 200); });
+  body.addEventListener("input", () => { clearTimeout(t); t = setTimeout(updateHint, 300); });
   updateHint();
   const form = el("form", { class: "form-card", onsubmit: async (e) => {
     e.preventDefault();
-    updateHint();
-    if (lang === "auto" && !detected) { toast("Couldn't detect the language. Choose it above the text.", "error"); return; }
     submit.disabled = true;
     try {
       const r = await api("/api/texts", { method: "POST", body: { lang, title: title.value, source_url: src.value, body: body.value } });
@@ -496,7 +513,7 @@ async function viewText(id) {
   view.replaceChildren(el("div", { class: "reader" },
     el("div", { class: "reader-head" },
       el("div", { class: "rh-title" },
-        el("span", { class: "badge lang-" + t.lang }, LANGS[t.lang]),
+        langBadge(t.lang),
         el("h1", { lang: t.lang }, t.title),
         t.source_url ? el("a", { href: t.source_url, target: "_blank", rel: "noopener noreferrer", class: "small" }, "source ↗") : null),
       el("div", { class: "rh-actions" }, trBtn, parBtn, delBtn)),
@@ -867,8 +884,9 @@ async function viewVocab() {
 
   function drawStats() {
     statsBox.replaceChildren();
-    for (const [k, name] of Object.entries(LANGS)) {
+    for (const k of langsWithData(stats)) {
       if (st.lang && st.lang !== k) continue;
+      const name = langName(k);
       const s = stats[k] || { total: 0, by_cefr: {}, by_status: {} };
       statsBox.append(el("div", { class: "stat" },
         el("div", { class: "muted small" }, name),
@@ -879,7 +897,7 @@ async function viewVocab() {
   }
 
   const sel = (opts, value, onchange) => el("select", { onchange }, opts.map(([v, l]) => el("option", { value: v, selected: v === value }, l)));
-  const langSel = sel([["", "All languages"], ...Object.entries(LANGS)], st.lang, (e) => { st.lang = e.target.value; pref.set("vocab.lang", st.lang); drawStats(); load(); });
+  const langSel = sel([["", "All languages"], ...langsWithData(stats).map((c) => [c, langName(c)])], st.lang, (e) => { st.lang = e.target.value; pref.set("vocab.lang", st.lang); drawStats(); load(); });
   const statusSel = sel([["", "Any status"], ...Object.entries(STATUS_LABEL)], "", (e) => { st.status = e.target.value; load(); });
   const cefrSel = sel([["", "Any level"], ...CEFR.map((c) => [c, c]), ["none", "No level"]], "", (e) => { st.cefr = e.target.value; load(); });
   let timer;
@@ -920,7 +938,7 @@ async function viewVocab() {
     const tbody = el("tbody");
     for (const w of rows) {
       const tr = el("tr", { class: "word-row" },
-        el("td", {}, el("div", { class: "lemma-cell", lang: w.lang }, w.stressed || w.lemma), el("div", { class: "muted small" }, [LANGS[w.lang], w.pos].filter(Boolean).join(" · "))),
+        el("td", {}, el("div", { class: "lemma-cell", lang: w.lang }, w.stressed || w.lemma), el("div", { class: "muted small" }, [langName(w.lang), w.pos].filter(Boolean).join(" · "))),
         el("td", {}, el("div", {}, w.gloss || "—"), w.example ? el("div", { class: "ex", lang: w.lang }, highlight(w.example, w.example_surface)) : null),
         el("td", {}, sel([["", "—"], ...CEFR.map((c) => [c, c])], w.cefr || "", async (e) => {
           try { await api(`/api/vocab/${w.id}`, { method: "PATCH", body: { cefr: e.target.value } }); toast("Level updated"); } catch (err) { toast(err.message, "error"); }
@@ -975,7 +993,7 @@ async function viewVocab() {
       el("thead", {}, el("tr", {}, ["Phrase", "Translation", "Notes", "Text", ""].map((h) => el("th", {}, h)))),
       el("tbody", {}, rows.map((p) => {
         const tr = el("tr", {},
-          el("td", {}, el("div", { class: "lemma-cell", lang: p.lang }, p.span), el("div", { class: "muted small" }, LANGS[p.lang])),
+          el("td", {}, el("div", { class: "lemma-cell", lang: p.lang }, p.span), el("div", { class: "muted small" }, langName(p.lang))),
           el("td", {}, p.translation, p.literal ? el("div", { class: "muted small" }, "Lit. " + p.literal) : null),
           el("td", { class: "small" }, p.notes || ""),
           el("td", { class: "small" }, p.text_id ? el("a", { href: `#/text/${p.text_id}` }, p.text_title) : el("span", { class: "muted" }, "deleted")),
@@ -1133,28 +1151,75 @@ async function viewSettings() {
       el("label", {}, passDeepL, "DeepL (free tier: 500k characters a month)")),
     deeplField,
     el("hr", { class: "sep" }),
-    el("h2", {}, "Language"),
+    el("h2", {}, "Your language"),
     el("label", { class: "field" }, el("span", {}, "Translate into"), target, targetList, el("small", {}, "Glosses, notes and translations are written in this language.")),
     el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, saveBtn, testBtn),
     result);
 
+  // Languages being learned: saved immediately, independent of the form.
+  const chips = el("div", { class: "lang-chips" });
+  const addSel = el("select", { "aria-label": "Language to add" });
+  const addBtn = el("button", { type: "button", class: "btn", onclick: () => {
+    if (addSel.value) saveLanguages([...Object.keys(LANGS), addSel.value], `Added ${langName(addSel.value)}`);
+  } }, "Add");
+  async function saveLanguages(codes, msg) {
+    try {
+      const r = await api("/api/settings", { method: "PUT", body: { values: { languages: codes.join(",") } } });
+      setLanguages(r.languages);
+      drawLanguages();
+      toast(msg);
+    } catch (err) { toast(err.message, "error"); }
+  }
+  function drawLanguages() {
+    const codes = Object.keys(LANGS);
+    chips.replaceChildren(...codes.map((c) => el("span", { class: "lang-chip" },
+      el("span", {}, LANGS[c]), el("span", { class: "code" }, c),
+      el("button", { type: "button", title: codes.length > 1 ? `Remove ${LANGS[c]}` : "Keep at least one language",
+        disabled: codes.length <= 1, "aria-label": `Remove ${LANGS[c]}`, onclick: () => {
+          if (!confirm(`Remove ${LANGS[c]}? Texts and words you've already saved in ${LANGS[c]} are kept, and come back if you add it again.`)) return;
+          saveLanguages(codes.filter((x) => x !== c), `Removed ${LANGS[c]}`);
+        } }, "✕"))));
+    addSel.replaceChildren(el("option", { value: "" }, "Choose a language…"),
+      ...Object.entries(LANG_NAMES).filter(([c]) => !LANGS[c]).sort((a, b) => a[1].localeCompare(b[1]))
+        .map(([c, n]) => el("option", { value: c }, n)));
+    drawAnalysers();
+  }
+  const langCard = el("div", { class: "form-card", style: "max-width:none;margin-bottom:20px" },
+    el("h2", {}, "Languages you're learning"),
+    el("p", { class: "muted small", style: "margin-top:-6px" }, "Pasted text is auto-detected among these. Changes save straight away."),
+    chips,
+    el("div", { class: "add-lang" }, addSel, addBtn));
+
   const an = data.analysers;
+  const analysersBox = el("div");
+  function drawAnalysers() {
+    const rows = Object.keys(an).filter((k) => LANGS[k]);
+    analysersBox.replaceChildren(...(rows.length
+      ? rows.map((k) => el("div", { class: "kv" },
+          el("span", { class: "dot " + (an[k].available ? "on" : "off") }),
+          el("b", {}, an[k].name), ` (${langName(k)}) — `, an[k].available ? "available" : el("span", { class: "muted" }, "not installed")))
+      : [el("div", { class: "muted small" }, "None of your languages has one.")]),
+      el("p", { class: "muted small", style: "margin:8px 0 0" }, "Other languages rely on the model alone."));
+  }
+  drawLanguages();
   const side = el("div", {},
     el("div", { class: "card" },
       el("h2", {}, "Offline analysers"),
       el("p", { class: "muted small", style: "margin-top:-6px" }, "When available, their candidate dictionary forms are passed to the model as hints."),
-      ["ru", "fi"].map((k) => el("div", { class: "kv" },
-        el("span", { class: "dot " + (an[k].available ? "on" : "off") }),
-        el("b", {}, an[k].name), ` (${LANGS[k]}) — `, an[k].available ? "available" : el("span", { class: "muted" }, "not installed")))),
+      analysersBox),
     el("div", { class: "card" },
       el("h2", {}, "Where keys are stored"),
       el("p", { class: "muted small", style: "margin:0" }, "Keys saved here live in reader.db in your data volume and are never sent back to the browser. Environment variables (LLM_API_KEY, ANTHROPIC_API_KEY, DEEPL_API_KEY) are used when nothing is saved.")));
 
-  view.replaceChildren(el("div", { class: "page-head" }, el("h1", {}, "Settings")), el("div", { class: "settings-grid" }, form, side));
+  view.replaceChildren(el("div", { class: "page-head" }, el("h1", {}, "Settings")), el("div", { class: "settings-grid" }, el("div", {}, langCard, form), side));
   fill();
 }
 
-route();
+(async () => {
+  try { setLanguages(await api("/api/languages")); }
+  catch (e) { view.replaceChildren(errorCard(e)); return; }
+  route();
+})();
 </script>
 </body>
 </html>
