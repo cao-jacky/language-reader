@@ -140,7 +140,17 @@ div.field { margin-bottom: 14px; }
 .text .row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 10px 24px; border-bottom: 1px solid var(--border); }
 .text .row:last-child { border-bottom: 0; }
 .text .row .tr { font: .98rem/1.6 var(--sans); color: var(--muted); padding-top: 4px; }
-.text .row .tr.missing { opacity: .5; }
+.text .row .tr.missing > span { opacity: .5; }
+.text .row .tr { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+button.star { border: 0; background: none; cursor: pointer; color: var(--muted); font-size: 1.05rem; line-height: 1; padding: 2px 4px; border-radius: 5px; flex: none; }
+button.star:hover { color: var(--accent); background: var(--accent-soft); }
+button.star.on { color: #d9a514; }
+button.star.btn { font-size: .88rem; border: 1px solid var(--border); padding: 5px 10px; }
+.pb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.pb-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+.pb-card .pb-src { font: 1.05rem/1.45 var(--serif); }
+.pb-card .pb-tr { font-size: .95rem; }
+.pb-card .pb-meta { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: auto; padding-top: 6px; color: var(--muted); font-size: .8rem; }
 .w { cursor: pointer; border-radius: 3px; transition: background .1s; }
 .w:hover { background: var(--accent-soft); }
 .text.selecting .w:hover { background: none; }
@@ -615,7 +625,8 @@ function renderText() {
     for (const s of sentences) {
       a.append(el("div", { class: "row" },
         el("div", { class: "orig" }, sentenceNode(s)),
-        el("div", { class: "tr" + (s.translation ? "" : " missing"), lang: "" }, s.translation || "—")));
+        el("div", { class: "tr" + (s.translation ? "" : " missing"), lang: "" },
+          el("span", {}, s.translation || "—"), starButton(s))));
     }
   } else {
     const flow = el("div", { class: "flow" });
@@ -640,7 +651,7 @@ function applyMarks() {
     const sf = surfaces[body.slice(s, e).toLowerCase()];
     const st = o ? o.status : sf ? sf.status : null;
     w.className = "w" + (st ? " st-" + st : "")
-      + (phrases.some((p) => s >= p.start && e <= p.end) ? " ph" : "")
+      + (phrases.some((p) => p.kind !== "sentence" && s >= p.start && e <= p.end) ? " ph" : "")
       + (R.active && R.active.s === s && R.active.e === e ? " active" : "");
     w.title = sf ? `${sf.lemma} — ${sf.gloss || ""}` : "";
   }
@@ -658,6 +669,46 @@ function closeSheet() {
   R.active = null; applyMarks(); renderPanelIdle();
 }
 
+const savedSentence = (sent) => R.t.phrases.find((p) => p.kind === "sentence" && p.start === sent.start && p.end === sent.end);
+
+// ☆ / ★ toggle that saves a sentence and its translation to the phrase book.
+function starButton(sent, { label = false } = {}) {
+  const b = el("button", { type: "button", class: "star" + (label ? " btn" : "") });
+  const draw = () => {
+    const on = !!savedSentence(sent);
+    b.classList.toggle("on", on);
+    b.title = on ? "Remove from phrase book" : "Save sentence to phrase book";
+    b.setAttribute("aria-label", b.title);
+    b.textContent = (on ? "★" : "☆") + (label ? (on ? " In phrase book" : " Save to phrase book") : "");
+  };
+  b.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    b.disabled = true;
+    try {
+      const existing = savedSentence(sent);
+      if (existing) {
+        await api(`/api/phrases/${existing.id}`, { method: "DELETE" });
+        R.t.phrases = R.t.phrases.filter((p) => p.id !== existing.id);
+        toast("Removed from phrase book");
+      } else {
+        const r = await api(`/api/texts/${R.t.id}/sentences/${sent.id}/phrase`, { method: "POST" });
+        R.t.phrases = [...R.t.phrases, r].sort((x, y) => x.start - y.start);
+        if (sent.translation == null) { sent.translation = r.sentence_translation; updateTranslateBtn(); }
+        toast("Saved to phrase book");
+      }
+      // Other stars for the same sentence (row and word card) follow.
+      document.querySelectorAll(".star").forEach((x) => x._draw?.());
+      if (!$("#panel.open")) renderPanelIdle();
+      if (R.parallel) { const tr = b.closest(".tr"); if (tr && sent.translation) { tr.classList.remove("missing"); tr.firstChild.textContent = sent.translation; } }
+    } catch (err) { toast(err.message, "error"); }
+    b.disabled = false;
+    draw();
+  });
+  b._draw = draw;
+  draw();
+  return b;
+}
+
 function renderPanelIdle() {
   const p = $("#panel");
   if (!p) return;
@@ -665,17 +716,18 @@ function renderPanelIdle() {
   const help = el("div", { class: "card help" },
     el("h2", {}, "How to read"),
     el("p", {}, "Click a word to see its dictionary form, meaning in context and CEFR level. It is saved to your vocabulary."),
-    el("p", {}, "Select several words to translate them as a phrase."),
+    el("p", {}, "Select several words to translate them as a phrase. It goes into your phrase book."),
+    el("p", {}, "After translating the passage, ☆ any sentence in side-by-side view to save it to the phrase book too."),
     el("div", { class: "legend" },
       el("span", {}, el("span", { class: "sw", style: "background:var(--new-bg)" }), "new"),
       el("span", {}, el("span", { class: "sw", style: "background:var(--learning-bg)" }), "learning"),
       el("span", {}, el("span", { class: "sw", style: "border-bottom:2px solid var(--known-line)" }), "known"),
-      el("span", {}, el("span", { class: "sw", style: "box-shadow:inset 0 -2px 0 var(--phrase-line)" }), "saved phrase")));
+      el("span", {}, el("span", { class: "sw", style: "box-shadow:inset 0 -2px 0 var(--phrase-line)" }), "phrase in phrase book")));
   const phrases = R.t.phrases;
-  const list = el("div", { class: "card" }, el("h2", {}, `Phrases in this text (${phrases.length})`),
+  const list = el("div", { class: "card" }, el("h2", {}, `Phrase book: from this text (${phrases.length})`),
     phrases.length
       ? el("ul", { class: "phrase-list" }, phrases.map((ph) => el("li", { onclick: () => renderPhraseCard(ph) },
-          el("div", { class: "p-src", lang: R.t.lang }, ph.span), el("div", { class: "p-tr" }, ph.translation))))
+          el("div", { class: "p-src", lang: R.t.lang }, ph.kind === "sentence" ? "★ " : "", ph.span), el("div", { class: "p-tr" }, ph.translation))))
       : el("div", { class: "muted small" }, "None yet."));
   p.replaceChildren(help, list);
 }
@@ -773,6 +825,8 @@ function sentenceBlock(sent) {
     } }, "Translate sentence");
     box.append(b);
   }
+  const so = R.t.sentences.find((x) => x.id === sent.id);
+  if (so) box.append(el("div", { style: "margin-top:8px" }, starButton(so, { label: true })));
   return box;
 }
 
@@ -825,7 +879,7 @@ function onSelect() {
     // Snap to whole words: what gets translated is exactly what is highlighted.
     const first = R.tokens.find(([, b]) => b > s0);
     const last = [...R.tokens].reverse().find(([a]) => a < e0);
-    if (!first || !last || first[0] >= last[1] || first === last) return hideSelBtn();
+    if (!first || !last || first[0] >= last[1]) return hideSelBtn();
     const s = first[0], e = last[1];
     const ws = art.querySelector(`.w[data-s="${s}"]`), we = art.querySelector(`.w[data-e="${e}"]`);
     if (ws && we && !COARSE) {
@@ -835,6 +889,12 @@ function onSelect() {
       snapped.setEnd(we.firstChild, we.firstChild.length);
       sel.removeAllRanges();
       sel.addRange(snapped);
+    }
+    if (first === last) {
+      // Part of one word selected (or a double-click): that word, whole, is a lookup.
+      hideSelBtn();
+      if (!(R.active && R.active.s === s && R.active.e === e)) lookupWord(s, e);
+      return;
     }
     showSelBtn(sel.getRangeAt(0), s, e);
   }, 0);
@@ -897,18 +957,19 @@ async function translatePhrase(s, e) {
 
 function renderPhraseCard(p) {
   panelShow(el("div", { class: "card phrase-card" },
-    el("div", { class: "wc-top" }, el("div", { class: "k" }, "Phrase"), sheetClose()),
+    el("div", { class: "wc-top" }, el("div", { class: "k" }, p.kind === "sentence" ? "Phrase book · sentence" : "Phrase book"), sheetClose()),
     el("div", { class: "phrase-src", lang: R.t.lang }, p.span),
     el("div", { class: "gloss" }, p.translation),
     p.literal ? el("div", { class: "kv" }, el("span", { class: "k" }, "Literally"), p.literal) : null,
     p.notes ? el("div", { class: "notes" }, p.notes) : null,
     el("div", { class: "card-foot" },
-      el("button", { class: "link", onclick: renderPanelIdle }, "← All phrases"),
+      el("button", { class: "link", onclick: renderPanelIdle }, "← Phrase book"),
       el("button", { class: "link danger", onclick: async () => {
         await api(`/api/phrases/${p.id}`, { method: "DELETE" });
         R.t.phrases = R.t.phrases.filter((x) => x.id !== p.id);
+        document.querySelectorAll(".star").forEach((x) => x._draw?.());
         applyMarks(); renderPanelIdle();
-      } }, "Delete phrase"))));
+      } }, "Remove from phrase book"))));
 }
 
 // ------------------------------------------------------------------ vocabulary
@@ -963,7 +1024,7 @@ async function viewVocab() {
     groupSel.style.display = words && st.layout === "grid" ? "" : "none";
   }
   const tabs = el("div", { class: "seg" });
-  for (const [k, l] of [["words", "Words"], ["phrases", "Phrases"]]) {
+  for (const [k, l] of [["words", "Words"], ["phrases", "Phrase book"]]) {
     tabs.append(el("button", { class: st.tab === k ? "on" : "", onclick: (e) => {
       st.tab = k; tabs.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === e.currentTarget));
       syncControls();
@@ -1134,23 +1195,31 @@ async function viewVocab() {
 
   function drawPhrases(rows) {
     if (!rows.length) {
-      results.replaceChildren(el("div", { class: "empty" }, el("p", {}, "No phrases yet. Select several words while reading to translate them.")));
+      results.replaceChildren(el("div", { class: "empty" }, el("p", {}, st.q
+        ? "Nothing in your phrase book matches."
+        : "Your phrase book is empty. Select several words while reading to translate a phrase, or ☆ a sentence in a translated passage.")));
       return;
     }
-    results.replaceChildren(el("div", { class: "table-wrap" }, el("table", {},
-      el("thead", {}, el("tr", {}, ["Phrase", "Translation", "Notes", "Text", ""].map((h) => el("th", {}, h)))),
-      el("tbody", {}, rows.map((p) => {
-        const tr = el("tr", {},
-          el("td", {}, el("div", { class: "lemma-cell", lang: p.lang }, p.span), el("div", { class: "muted small" }, langName(p.lang))),
-          el("td", {}, p.translation, p.literal ? el("div", { class: "muted small" }, "Lit. " + p.literal) : null),
-          el("td", { class: "small" }, p.notes || ""),
-          el("td", { class: "small" }, p.text_id ? el("a", { href: `#/text/${p.text_id}` }, p.text_title) : el("span", { class: "muted" }, "deleted")),
-          el("td", {}, el("button", { class: "icon", title: "Delete", onclick: async () => {
-            if (!confirm("Delete this phrase?")) return;
-            await api(`/api/phrases/${p.id}`, { method: "DELETE" }); tr.remove();
-          } }, "✕")));
-        return tr;
-      })))));
+    const multi = new Set(rows.map((p) => p.lang)).size > 1;
+    results.replaceChildren(
+      el("div", { class: "muted small", style: "margin-bottom:8px" }, `${rows.length} entries`),
+      el("div", { class: "pb-grid" }, rows.map((p) => {
+        const c = el("article", { class: "pb-card" },
+          multi ? el("div", {}, langBadge(p.lang)) : null,
+          el("div", { class: "pb-src", lang: p.lang }, p.span),
+          el("div", { class: "pb-tr" }, p.translation || "—"),
+          p.literal ? el("div", { class: "muted small" }, "Literally: " + p.literal) : null,
+          p.notes ? el("div", { class: "notes", style: "margin:2px 0" }, p.notes) : null,
+          el("div", { class: "pb-meta" },
+            el("span", {}, p.kind === "sentence" ? "★ Sentence · " : "Phrase · ",
+              p.text_id ? el("a", { href: `#/text/${p.text_id}` }, p.text_title) : "text deleted"),
+            el("button", { class: "icon", title: "Remove from phrase book", "aria-label": "Remove from phrase book", onclick: async () => {
+              if (!confirm("Remove this from your phrase book?")) return;
+              await api(`/api/phrases/${p.id}`, { method: "DELETE" });
+              c.remove();
+            } }, "✕")));
+        return c;
+      })));
   }
 
   view.replaceChildren(

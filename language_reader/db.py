@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS phrases (
     translation   TEXT,
     literal       TEXT,
     notes         TEXT,
+    kind          TEXT NOT NULL DEFAULT 'selection',  -- selection | sentence
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (text_id, start, end)
 );
@@ -135,6 +136,14 @@ def init() -> None:
     try:
         conn.execute("PRAGMA journal_mode = WAL")
         conn.executescript(SCHEMA)
+        _migrate(conn)
         conn.commit()
     finally:
         conn.close()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Bring databases created by earlier versions up to the current schema."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(phrases)")}
+    if "kind" not in cols:
+        conn.execute("ALTER TABLE phrases ADD COLUMN kind TEXT NOT NULL DEFAULT 'selection'")

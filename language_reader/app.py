@@ -196,7 +196,7 @@ def get_text(tid: int) -> dict:
         t["phrases"] = [
             dict(r)
             for r in c.execute(
-                "SELECT id, start, end, span, translation, literal, notes FROM phrases "
+                "SELECT id, start, end, span, translation, literal, notes, kind FROM phrases "
                 "WHERE text_id = ? ORDER BY start",
                 (tid,),
             )
@@ -391,11 +391,40 @@ def add_phrase(req: PhraseReq) -> dict:
             (t["lang"], req.text_id, req.start, req.end, span, context, r["translation"], r["literal"], r["notes"]),
         )
         row = c.execute(
-            "SELECT id, start, end, span, translation, literal, notes FROM phrases "
+            "SELECT id, start, end, span, translation, literal, notes, kind FROM phrases "
             "WHERE text_id = ? AND start = ? AND end = ?",
             (req.text_id, req.start, req.end),
         ).fetchone()
     return dict(row)
+
+
+@app.post("/api/texts/{tid}/sentences/{sid}/phrase")
+def save_sentence(tid: int, sid: int) -> dict:
+    """Save a sentence and its translation to the phrase book, translating it first if needed."""
+    with db.tx() as c:
+        t = _text_or_404(c, tid)
+        sent = c.execute("SELECT * FROM sentences WHERE id = ? AND text_id = ?", (sid, tid)).fetchone()
+    if not sent:
+        raise HTTPException(404, "Sentence not found")
+    original = t["body"][sent["start"] : sent["end"]]
+    translation = sent["translation"]
+    if translation is None:
+        translation = _backend(analysis.translate_sentences, settings.load(), t["lang"], [original])[0]
+        with db.tx() as c:
+            c.execute("UPDATE sentences SET translation = ? WHERE id = ?", (translation, sid))
+    with db.tx() as c:
+        c.execute(
+            """INSERT INTO phrases(lang, text_id, start, end, span, context, translation, literal, notes, kind)
+               VALUES(?, ?, ?, ?, ?, ?, ?, '', '', 'sentence')
+               ON CONFLICT(text_id, start, end) DO NOTHING""",
+            (t["lang"], tid, sent["start"], sent["end"], original, original, translation),
+        )
+        row = c.execute(
+            "SELECT id, start, end, span, translation, literal, notes, kind FROM phrases "
+            "WHERE text_id = ? AND start = ? AND end = ?",
+            (tid, sent["start"], sent["end"]),
+        ).fetchone()
+    return {**dict(row), "sentence_id": sid, "sentence_translation": translation}
 
 
 @app.get("/api/phrases")
