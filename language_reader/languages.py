@@ -8,6 +8,7 @@ it says what, so the page can suggest adding it.
 from __future__ import annotations
 
 import threading
+import unicodedata
 
 # Languages py3langid can identify, by English name. Codes it knows but that
 # are not listed here (dialects, historical forms) are not offered.
@@ -95,7 +96,7 @@ def detect(text: str, configured: list[str]) -> dict:
     `guess` is the classifier's overall best answer, which may be a language
     not in `configured` (so the caller can say "looks like English").
     """
-    sample = text.strip()[:4000]
+    sample = unicodedata.normalize("NFC", text.strip()[:4000])
     letters = sum(ch.isalpha() for ch in sample)
     if letters < 3:
         return {"lang": None, "guess": None, "confidence": 0.0}

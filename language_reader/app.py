@@ -140,7 +140,7 @@ def list_texts(lang: str = "") -> list[dict]:
 
 @app.post("/api/texts")
 def create_text(req: NewText) -> dict:
-    body = req.body.replace("\r\n", "\n").strip()
+    body = textproc.normalise(req.body.replace("\r\n", "\n")).strip()
     if not body:
         raise HTTPException(400, "The text is empty")
     configured = settings.configured_languages()
