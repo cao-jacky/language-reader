@@ -161,8 +161,9 @@ button.star.on { color: #d9a514; }
 button.star.btn { font-size: .88rem; border: 1px solid var(--border); padding: 5px 10px; }
 .pb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
 .pb-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
-.pb-card .pb-src { font: 1.05rem/1.45 var(--serif); }
-.pb-card .pb-tr { font-size: .95rem; }
+.pb-card .pb-src { font: 600 1.14rem/1.45 var(--serif); padding-bottom: 9px; margin-bottom: 3px;
+  border-bottom: 1px solid var(--border); }
+.pb-card .pb-tr { font-size: .93rem; color: color-mix(in srgb, var(--text) 78%, var(--muted)); }
 .pb-card .pb-meta { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: auto; padding-top: 6px; color: var(--muted); font-size: .8rem; }
 /* Word highlights. Each word's box is padded to the full line height, so
    hovering or clicking anywhere in its line slot hits it (the text is set at
