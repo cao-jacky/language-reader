@@ -184,7 +184,4 @@ The page is a thin client over a JSON API; interactive docs are at
 ## Licence
 
 Piper (`piper-tts`) is licensed under GPL-3.0; it is installed as a dependency
-and runs in the same container.
-
-
-MIT
+and runs in the same container. Everything else here is MIT.
