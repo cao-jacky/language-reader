@@ -188,7 +188,7 @@ div.field { margin-bottom: 14px; }
 
 /* vocab */
 .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
-.filters select { width: auto; }
+.filters select { width: auto; max-width: 100%; }
 .filters input[type=search] { width: 240px; max-width: 100%; }
 .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
@@ -206,6 +206,40 @@ tr.detail td { background: var(--surface-2); }
 .occ:first-child { border-top: 0; }
 .occ .s { font-family: var(--serif); }
 .occ .s b { background: var(--new-bg); border-radius: 3px; font-weight: 600; }
+/* vocabulary grid */
+.grid-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.grid-head .legend { margin: 0; color: var(--muted); }
+.legend .sw.st-new { background: var(--new-line); } .legend .sw.st-learning { background: var(--learning-line); } .legend .sw.st-known { background: var(--known-line); }
+.grid-head .legend .sw { width: 10px; height: 10px; border-radius: 2px; }
+.lang-h { display: flex; align-items: center; gap: 8px; font-size: .95rem; font-weight: 500; color: var(--muted); margin: 22px 0 4px; }
+.letter-index { position: sticky; top: 52px; z-index: 5; background: var(--bg); display: flex; flex-wrap: wrap; gap: 2px;
+  padding: 8px 0; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
+.letter-index a { min-width: 30px; text-align: center; padding: 3px 7px; border-radius: 6px; text-decoration: none;
+  font: 600 .95rem var(--serif); color: var(--text); }
+.letter-index a:hover { background: var(--accent-soft); color: var(--accent); }
+.vsec { margin-bottom: 24px; scroll-margin-top: 112px; }
+.vsec-h { font: 600 1.35rem var(--serif); margin: 0 0 10px; padding-bottom: 4px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: baseline; gap: 10px; }
+.vsec-h .n { font: .78rem var(--sans); color: var(--muted); }
+.vgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+.vcard { --st: var(--border); text-align: left; font: inherit; color: inherit; cursor: pointer; background: var(--surface);
+  border: 1px solid var(--border); border-left: 4px solid var(--st); border-radius: 8px; padding: 9px 11px;
+  display: flex; flex-direction: column; gap: 3px; min-height: 86px; transition: border-color .12s, box-shadow .12s; }
+.vcard:hover { border-color: var(--accent); border-left-color: var(--st); box-shadow: var(--shadow); }
+.vcard.st-new { --st: var(--new-line); } .vcard.st-learning { --st: var(--learning-line); } .vcard.st-known { --st: var(--known-line); }
+.vc-top { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.vc-word { font: 600 1.08rem/1.25 var(--serif); overflow-wrap: anywhere; }
+.vc-top .cefr { flex: none; font-size: .66rem; padding: 1px 4px; }
+.vc-gloss { font-size: .88rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.vc-meta { font-size: .74rem; color: var(--muted); margin-top: auto; }
+dialog.word-dialog { border: 1px solid var(--border); border-radius: 14px; padding: 0; width: min(580px, calc(100vw - 32px));
+  max-height: 86vh; background: var(--surface); color: var(--text); box-shadow: 0 10px 40px rgba(0,0,0,.25); }
+dialog.word-dialog::backdrop { background: rgba(0,0,0,.4); }
+.wd-body { padding: 16px 20px 18px; overflow: auto; max-height: 86vh; }
+.wd-body .k { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 650; margin-right: 6px; }
+.wd-body select { width: auto; padding: 3px 6px; }
+.occ-list { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
+.occ-list .k + .occ { border-top: 0; }
 .cefr-bar { display: flex; gap: 6px; flex-wrap: wrap; font-size: .82rem; margin-top: 4px; }
 .cefr-bar span { color: var(--muted); }
 
@@ -248,6 +282,8 @@ hr.sep { border: 0; border-top: 1px solid var(--border); margin: 20px 0; }
   .brand span:last-child { display: none; }
   main { padding-top: 16px; }
   .stat { min-width: 0; flex: 1 1 140px; }
+  .vgrid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
+  .vcard { min-height: 76px; padding: 8px 9px; }
   .cards { grid-template-columns: 1fr; }
 }
 </style>
@@ -699,13 +735,14 @@ function renderWordCard(r) {
       el("button", { class: "link danger", onclick: () => forgetLemma(L) }, "Remove word"))));
 }
 
-function statusButtons(L) {
+function statusButtons(L, onChange) {
   const wrap = el("div", { class: "seg status-seg" });
   for (const st of Object.keys(STATUS_LABEL)) {
     wrap.append(el("button", { class: `st-btn st-${st}` + (L.status === st ? " on" : ""), onclick: async () => {
       try {
         await setStatus(L.id, st);
         L.status = st;
+        onChange?.(st);
         wrap.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.classList.contains("st-" + st)));
       } catch (err) { toast(err.message, "error"); }
     } }, STATUS_LABEL[st]));
@@ -877,7 +914,11 @@ function renderPhraseCard(p) {
 // ------------------------------------------------------------------ vocabulary
 async function viewVocab() {
   const params = new URLSearchParams(location.hash.split("?")[1] || "");
-  const st = { tab: params.get("tab") || "words", lang: params.get("lang") ?? pref.get("vocab.lang"), status: "", cefr: "", q: params.get("q") || "" };
+  const st = {
+    tab: params.get("tab") || "words", lang: params.get("lang") ?? pref.get("vocab.lang"), status: "", cefr: "", q: params.get("q") || "",
+    layout: pref.get("vocab.layout", "grid"), group: pref.get("vocab.group", "alpha"),
+  };
+  let lastRows = [];
   const stats = await api("/api/stats");
   const results = el("div");
   const statsBox = el("div", { class: "stats-strip" });
@@ -905,11 +946,27 @@ async function viewVocab() {
     clearTimeout(timer); timer = setTimeout(() => { st.q = e.target.value.trim(); load(); }, 250);
   } });
   const exportLink = el("a", { class: "btn" }, "Export CSV");
+  const layoutSeg = el("div", { class: "seg" });
+  for (const [k, l] of [["grid", "Grid"], ["table", "Table"]]) {
+    layoutSeg.append(el("button", { class: st.layout === k ? "on" : "", onclick: (e) => {
+      st.layout = k; pref.set("vocab.layout", k);
+      layoutSeg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === e.currentTarget));
+      syncControls(); drawWords(lastRows);
+    } }, l));
+  }
+  const groupSel = sel([["alpha", "Alphabetical"], ["cefr", "By CEFR level"], ["status", "By status"], ["pos", "By part of speech"]], st.group,
+    (e) => { st.group = e.target.value; pref.set("vocab.group", st.group); drawWords(lastRows); });
+  groupSel.setAttribute("aria-label", "Group cards");
+  function syncControls() {
+    const words = st.tab === "words";
+    statusSel.style.display = cefrSel.style.display = exportLink.style.display = layoutSeg.style.display = words ? "" : "none";
+    groupSel.style.display = words && st.layout === "grid" ? "" : "none";
+  }
   const tabs = el("div", { class: "seg" });
   for (const [k, l] of [["words", "Words"], ["phrases", "Phrases"]]) {
     tabs.append(el("button", { class: st.tab === k ? "on" : "", onclick: (e) => {
       st.tab = k; tabs.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === e.currentTarget));
-      statusSel.style.display = cefrSel.style.display = exportLink.style.display = k === "words" ? "" : "none";
+      syncControls();
       load();
     } }, l));
   }
@@ -931,10 +988,12 @@ async function viewVocab() {
   }
 
   function drawWords(rows) {
+    lastRows = rows;
     if (!rows.length) {
       results.replaceChildren(el("div", { class: "empty" }, el("p", {}, st.q || st.status || st.cefr ? "No words match these filters." : "No words yet. Click words while reading to collect them.")));
       return;
     }
+    if (st.layout === "grid") return drawGrid(rows);
     const tbody = el("tbody");
     for (const w of rows) {
       const tr = el("tr", { class: "word-row" },
@@ -961,18 +1020,7 @@ async function viewVocab() {
         const cell = el("td", { colspan: 6 }, el("div", { class: "spinner" }, "Loading…"));
         tr.after(el("tr", { class: "detail" }, cell));
         try {
-          const d = await api(`/api/vocab/${w.id}`);
-          cell.replaceChildren(
-            d.other_meanings.length ? el("div", { class: "kv" }, el("b", {}, "Also: "), d.other_meanings.join("; ")) : null,
-            d.compound_parts.length ? el("div", { class: "kv" }, el("b", {}, "Compound: "), d.compound_parts.join(" + ")) : null,
-            d.notes ? el("div", { class: "kv" }, el("b", {}, "Notes: "), d.notes) : null,
-            d.cefr ? el("div", { class: "muted small" }, `CEFR ${d.cefr} (${d.cefr_source || "unknown source"})`) : null,
-            el("div", { style: "margin-top:8px" }, d.occurrences.map((o) => el("div", { class: "occ" },
-              el("div", { class: "s", lang: d.lang }, highlight(o.sentence_text, o.surface)),
-              o.sentence_translation ? el("div", { class: "muted small" }, o.sentence_translation) : null,
-              el("div", { class: "muted small" },
-                [o.surface, o.morphology, o.gloss_in_context].filter(Boolean).join(" · "),
-                o.text_id ? [" · ", el("a", { href: `#/text/${o.text_id}` }, o.text_title || "open text")] : " · text deleted")))));
+          cell.replaceChildren(...wordDetails(await api(`/api/vocab/${w.id}`)));
         } catch (err) { cell.replaceChildren(errorCard(err)); }
       });
       tbody.append(tr);
@@ -982,6 +1030,106 @@ async function viewVocab() {
       el("div", { class: "table-wrap" }, el("table", {},
         el("thead", {}, el("tr", {}, ["Word", "Meaning & first example", "CEFR", "Status", "Seen", ""].map((h) => el("th", {}, h)))),
         tbody)));
+  }
+
+  // Grid: word cards in labelled sections, A–Ö by default -----------------
+  function groupRows(rows, lang) {
+    const coll = new Intl.Collator(lang || undefined, { sensitivity: "base" });
+    const key = (w) => stripStress(w.lemma);
+    const sorted = [...rows].sort((a, b) => coll.compare(key(a), key(b)));
+    if (st.group === "cefr") {
+      return [...CEFR, ""].map((c) => [c || "No level", sorted.filter((w) => (w.cefr || "") === c)]).filter(([, l]) => l.length);
+    }
+    if (st.group === "status") {
+      return Object.entries(STATUS_LABEL).map(([k, l]) => [l, sorted.filter((w) => w.status === k)]).filter(([, l]) => l.length);
+    }
+    const map = new Map();
+    for (const w of sorted) {
+      const k = st.group === "pos" ? (w.pos || "other") : (key(w).charAt(0).toLocaleUpperCase(lang || undefined) || "#");
+      if (!map.has(k)) map.set(k, []);
+      map.get(k).push(w);
+    }
+    return [...map.entries()].sort((a, b) => coll.compare(a[0], b[0]));
+  }
+
+  function card(w) {
+    const c = el("button", { type: "button", class: `vcard st-${w.status}`, onclick: () => openWord(w, c) },
+      el("div", { class: "vc-top" },
+        el("span", { class: "vc-word", lang: w.lang }, w.stressed || w.lemma),
+        w.cefr ? el("span", { class: "cefr cefr-" + w.cefr[0] }, w.cefr) : null),
+      el("div", { class: "vc-gloss" }, w.gloss || "—"),
+      el("div", { class: "vc-meta" }, [w.pos, w.occurrences > 1 ? `seen ${w.occurrences}×` : null].filter(Boolean).join(" · ")));
+    return c;
+  }
+
+  function drawGrid(rows) {
+    const byLang = new Map();
+    for (const code of langsWithData(stats, rows.map((w) => w.lang))) {
+      const list = rows.filter((w) => w.lang === code);
+      if (list.length) byLang.set(code, list);
+    }
+    const multi = byLang.size > 1;
+    const out = [
+      el("div", { class: "grid-head" },
+        el("span", { class: "muted small" }, `${rows.length} words`),
+        el("span", { class: "legend small" }, Object.entries(STATUS_LABEL).map(([k, l]) =>
+          el("span", {}, el("span", { class: `sw st-${k}` }), l)))),
+    ];
+    let n = 0;
+    for (const [code, list] of byLang) {
+      const sections = groupRows(list, code);
+      const ids = sections.map(() => `vsec-${n++}`);
+      if (multi) out.push(el("h2", { class: "lang-h" }, langBadge(code), ` ${list.length} words`));
+      if (sections.length > 1) {
+        out.push(el("nav", { class: "letter-index", "aria-label": `Jump to section (${langName(code)})` },
+          sections.map(([label], i) => el("a", { href: "#", onclick: (e) => {
+            e.preventDefault();
+            document.getElementById(ids[i])?.scrollIntoView({ behavior: "smooth", block: "start" });
+          } }, label))));
+      }
+      sections.forEach(([label, items], i) => out.push(el("section", { class: "vsec", id: ids[i] },
+        el("h3", { class: "vsec-h", lang: st.group === "alpha" ? code : null }, label, el("span", { class: "n" }, items.length)),
+        el("div", { class: "vgrid" }, items.map(card)))));
+    }
+    results.replaceChildren(...out);
+  }
+
+  async function openWord(w, cardEl) {
+    const body = el("div", { class: "wd-body" }, el("div", { class: "spinner" }, "Loading…"));
+    const dlg = el("dialog", { class: "word-dialog", onclose: () => dlg.remove() }, body);
+    dlg.addEventListener("click", (e) => { if (e.target === dlg) dlg.close(); }); // backdrop
+    document.body.append(dlg);
+    dlg.showModal();
+    try {
+      const d = await api(`/api/vocab/${w.id}`);
+      const refreshCard = () => cardEl.replaceWith(cardEl = card(w));
+      body.replaceChildren(
+        el("div", { class: "wc-top" },
+          el("div", {}, langBadge(d.lang)),
+          el("button", { class: "icon", title: "Close", onclick: () => dlg.close() }, "✕")),
+        el("div", { class: "lemma-line" },
+          el("span", { class: "lemma", lang: d.lang }, d.stressed || d.lemma),
+          el("span", { class: "pos" }, d.pos)),
+        el("div", { class: "gloss" }, d.gloss || "—"),
+        statusButtons(d, (s) => { w.status = s; refreshCard(); }),
+        el("div", { class: "kv", style: "margin-top:10px" }, el("span", { class: "k" }, "CEFR"),
+          sel([["", "—"], ...CEFR.map((c) => [c, c])], d.cefr || "", async (e) => {
+            try {
+              await api(`/api/vocab/${w.id}`, { method: "PATCH", body: { cefr: e.target.value } });
+              w.cefr = e.target.value || null; refreshCard(); toast("Level updated");
+            } catch (err) { toast(err.message, "error"); }
+          }),
+          d.cefr_source ? el("span", { class: "muted small" }, ` ${d.cefr_source}`) : null),
+        ...wordDetails(d, { meta: false }),
+        el("div", { class: "card-foot" },
+          el("span", { class: "muted small" }, `Added ${fmtDate(d.created_at)}`),
+          el("button", { class: "link danger", onclick: async () => {
+            if (!confirm(`Delete “${d.lemma}” and its examples?`)) return;
+            await api(`/api/vocab/${w.id}`, { method: "DELETE" });
+            lastRows = lastRows.filter((x) => x.id !== w.id);
+            dlg.close(); drawWords(lastRows);
+          } }, "Delete word")));
+    } catch (err) { body.replaceChildren(errorCard(err)); }
   }
 
   function drawPhrases(rows) {
@@ -1008,10 +1156,31 @@ async function viewVocab() {
   view.replaceChildren(
     el("div", { class: "page-head" }, el("h1", {}, "Vocabulary"), tabs),
     statsBox,
-    el("div", { class: "filters" }, langSel, statusSel, cefrSel, search, exportLink),
+    el("div", { class: "filters" }, langSel, statusSel, cefrSel, search, layoutSeg, groupSel, exportLink),
     results);
+  syncControls();
   drawStats();
   load();
+}
+
+const stripStress = (s) => (s || "").replace(/[́̀]/g, "");
+
+// Meanings, notes and every sentence a word was met in.
+function wordDetails(d, { meta = true } = {}) {
+  return [
+    d.other_meanings.length ? el("div", { class: "kv" }, el("b", {}, "Also: "), d.other_meanings.join("; ")) : null,
+    d.compound_parts.length ? el("div", { class: "kv" }, el("b", {}, "Compound: "), d.compound_parts.join(" + ")) : null,
+    d.notes ? el("div", { class: "notes" }, d.notes) : null,
+    meta && d.cefr ? el("div", { class: "muted small" }, `CEFR ${d.cefr} (${d.cefr_source || "unknown source"})`) : null,
+    el("div", { class: "occ-list" },
+      el("div", { class: "k" }, d.occurrences.length === 1 ? "Seen once" : `Seen ${d.occurrences.length} times`),
+      d.occurrences.map((o) => el("div", { class: "occ" },
+        el("div", { class: "s", lang: d.lang }, highlight(o.sentence_text, o.surface)),
+        o.sentence_translation ? el("div", { class: "muted small" }, o.sentence_translation) : null,
+        el("div", { class: "muted small" },
+          [o.surface, o.morphology, o.gloss_in_context].filter(Boolean).join(" · "),
+          o.text_id ? [" · ", el("a", { href: `#/text/${o.text_id}` }, o.text_title || "open text")] : " · text deleted")))),
+  ].filter(Boolean);
 }
 
 // ------------------------------------------------------------------ settings

@@ -21,7 +21,9 @@ your vocabulary builds up as you read.
 - **Translate a passage.** Sentences are translated in batches and shown side
   by side with the original.
 - **Vocabulary.** Every looked-up word is stored once per dictionary form, with
-  each sentence you met it in. Mark words new, learning or known; the reader
+  each sentence you met it in. Browse it as a grid of word cards in
+  alphabetical sections (A–Ö for Finnish, А–Я for Russian) with a letter index,
+  or grouped by CEFR level, status or part of speech; or as a table. Mark words new, learning or known; the reader
   colours them accordingly in every text. Filter by language, status and CEFR
   level, search by word form or meaning, and export to CSV (for Anki or a
   spreadsheet).
