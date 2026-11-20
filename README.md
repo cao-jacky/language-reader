@@ -25,6 +25,34 @@ your vocabulary builds up as you read.
   differs, and a note on any idiom or construction.
 - **Translate a passage.** Sentences are translated in batches and shown side
   by side with the original.
+- **Meanings above.** A toolbar switch in the reader writes the meaning of
+  every word you've looked up above it, like a correction pencilled over the
+  line. Words marked known stay bare.
+- **Summaries.** The reader's Summary button writes a short summary with key
+  points, either in your own language or in simple sentences of the text's
+  language (reading practice before tackling the full text). Summaries are
+  saved with the text and shown in the reader's sidebar.
+- **Review with flashcards.** Every word you look up becomes a flashcard on
+  the Review page, scheduled with [FSRS](https://github.com/open-spaced-repetition)
+  (the algorithm Anki uses) for about 90% recall. Cards show the word in a
+  sentence you met it in, a different one each time where there are several.
+  Two directions: *word → meaning* (recognise the word in its sentence), and
+  *meaning → word* (fill the gap in the sentence from its meaning, optionally
+  typing the answer, which is checked). Rate each card Again, Hard, Good or
+  Easy (keys 1–4; Space shows the answer). New words come in order of
+  usefulness: lowest CEFR level first, then the words you've met most often,
+  up to a daily limit per language (20 by default). Words marked known are
+  skipped, and "I know this word" on a card marks it known. The menu shows how
+  many cards are waiting.
+- **Stars.** Star words on their card in the reader, in the vocabulary grid
+  or table. Filter the vocabulary by stars, review starred words only, or
+  export only them.
+- **Anki export.** Export words or phrase-book entries as an Anki import file,
+  using the current vocabulary filters: *fill in the blank* (Anki's Cloze type:
+  the example sentence with the word hidden and its meaning in that sentence
+  as the hint) or *front and back* (Basic type). The file sets the note type
+  and the deck (Language Reader::Finnish), and importing a newer export
+  updates the same notes instead of duplicating them (Anki 2.1.55 or later).
 - **Listen.** Speaker buttons read a selection, a word (as it appears and in its
   dictionary form), a phrase or a sentence aloud. Each has a **Slow** button beside
   it that plays at 65% (adjustable), about the pace of Duolingo's slow mode. Choose the engine under
@@ -45,8 +73,8 @@ your vocabulary builds up as you read.
   alphabetical sections (A–Ö for Finnish, А–Я for Russian) with a letter index,
   or grouped by CEFR level, status or part of speech; or as a table. Mark words new, learning or known; the reader
   colours them accordingly in every text. Filter by language, status and CEFR
-  level, search by word form or meaning, and export to CSV (for Anki or a
-  spreadsheet).
+  level, search by word form or meaning, and export to CSV (for a
+  spreadsheet) or to Anki.
 - **Your languages.** Add or remove the languages you're learning on the
   Settings page. Pasted text is auto-detected among them with
   [py3langid](https://github.com/adbar/py3langid), offline; text in a language
@@ -240,8 +268,12 @@ The page is a thin client over a JSON API; interactive docs are at
 | `POST` | `/api/texts/{id}/translate` | Translate all or selected sentences |
 | `POST` | `/api/lookup` | Analyse the word at `start`–`end` in a text and save it |
 | `GET` / `POST` / `DELETE` | `/api/phrases` | Phrase translations |
-| `GET` / `PATCH` / `DELETE` | `/api/vocab[/{id}]` | Vocabulary, filterable by `lang`, `status`, `cefr`, `q` |
+| `GET` / `PATCH` / `DELETE` | `/api/vocab[/{id}]` | Vocabulary, filterable by `lang`, `status`, `cefr`, `starred`, `q` |
 | `GET` | `/api/export.csv` | Vocabulary as CSV |
+| `GET` | `/api/export/anki.txt` | Words or phrases as an Anki import file (`what`, `notetype`, plus the vocabulary filters) |
+| `GET` | `/api/review` | Flashcards due now plus today's new words (`lang`, `starred`, `new_limit`) |
+| `POST` | `/api/review/{lemma id}` | Record a review (`rating` 1–4) |
+| `POST` | `/api/texts/{id}/summary` | Summarise a text (`kind`: `target` or `simple`) |
 | `GET` / `PUT` | `/api/settings` | Backend settings |
 | `POST` | `/api/settings/test` | Run one uncached lookup against the configured backend |
 

@@ -186,3 +186,40 @@ Return `translations` with exactly {len(chunk)} strings, in the same order, with
         return tr
 
     return _cached("sentences", s, [lang, chunk], run)
+
+
+SUMMARY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string"},
+        "key_points": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["summary", "key_points"],
+    "additionalProperties": False,
+}
+
+
+def summarise(s: dict, lang: str, title: str, body: str, kind: str) -> dict:
+    """kind 'target': summary in the learner's language. 'simple': a summary in
+    the text's own language, in plain words a B1 learner can read."""
+    name = languages.name(lang)
+    if kind == "simple":
+        how = (f"Write the summary and key points in {name}, not in {s['target_language']}, using short "
+               f"sentences and common words a B1-level learner of {name} can follow.")
+    else:
+        how = f"Write the summary and key points in {s['target_language']}."
+    user = f"""Title: {title}
+
+Text:
+{body[:60000]}
+
+Summarise this {name} text.
+- summary: 2–4 sentences on what the text says.
+- key_points: up to 5 short key points (may be empty for a very short text).
+{how}"""
+    return _cached(
+        "summary",
+        s,
+        [lang, kind, title, body],
+        lambda: llm.complete_json(s, _system(lang, s["target_language"]), user, SUMMARY_SCHEMA, 1500, task="summary"),
+    )

@@ -364,6 +364,76 @@ hr.sep { border: 0; border-top: 1px solid var(--border); margin: 20px 0; }
 #toast div { background: var(--text); color: var(--bg); padding: 9px 14px; border-radius: 8px; box-shadow: var(--shadow); font-size: .9rem; max-width: min(90vw, 520px); }
 #toast div.error { background: var(--danger); color: #fff; }
 
+/* stars */
+:root { --star: #c48600; }
+@media (prefers-color-scheme: dark) { :root { --star: #f2c14e; } }
+button.fav { background: none; border: 1px solid transparent; border-radius: 6px; width: 30px; height: 30px; padding: 0; cursor: pointer;
+  color: var(--muted); display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; }
+button.fav:hover { border-color: var(--border); color: var(--text); }
+button.fav.on { color: var(--star); }
+.vc-star { color: var(--star); display: inline-flex; vertical-align: -2px; margin-left: 4px; }
+.btn.star-filter.on { color: var(--star); border-color: var(--star); background: color-mix(in srgb, var(--star) 10%, var(--surface)); }
+.btn svg { flex: none; }
+nav .count { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 5px; border-radius: 9px; background: var(--accent);
+  color: var(--accent-text); font-size: .7rem; font-weight: 650; line-height: 17px; text-align: center; vertical-align: 1px; }
+nav .count:empty { display: none; }
+
+/* flashcard review */
+.rv-wrap { max-width: 720px; margin: 0 auto; }
+.rv-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+.rv-tools label { display: inline-flex; align-items: center; gap: 6px; font-size: .88rem; color: var(--muted); }
+.rv-tools input[type=number] { width: 64px; padding: 5px 7px; }
+.rv-tools select { width: auto; }
+.rv-card .k { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 650; margin-right: 6px; }
+.rv-meta { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: .85rem; }
+.rv-bar { height: 4px; background: var(--surface-2); border-radius: 2px; overflow: hidden; margin: 6px 0 16px; }
+.rv-bar > div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.rv-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 22px 28px 22px; box-shadow: var(--shadow); }
+.rv-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 14px; }
+.rv-head .tags { display: flex; gap: 6px; align-items: center; font-size: .78rem; color: var(--muted); }
+.rv-sentence { font: 1.35rem/1.75 var(--serif); }
+.rv-word { background: var(--accent-soft); border-radius: 4px; padding: 1px 3px; font-weight: 600; }
+.rv-gap { display: inline-block; border-bottom: 2px solid var(--accent); margin: 0 2px; line-height: 1.2; text-align: center; }
+.rv-gap.filled { color: var(--accent); font-weight: 600; }
+.rv-lemma-q { font: 600 1.8rem/1.25 var(--serif); }
+.rv-hint { color: var(--muted); margin-top: 10px; }
+.rv-hint b { color: var(--text); font-weight: 600; }
+.rv-input { display: flex; gap: 8px; margin-top: 16px; }
+.rv-input input { flex: 1; min-width: 0; font: 1.1rem var(--serif); padding: 7px 10px; }
+.rv-check { margin-top: 8px; font-size: .92rem; }
+.rv-check.ok { color: var(--ok); } .rv-check.bad { color: var(--danger); }
+.rv-show { margin-top: 18px; display: flex; justify-content: center; }
+.rv-show .btn { min-width: 180px; justify-content: center; padding: 9px 18px; }
+.rv-answer { border-top: 1px solid var(--border); margin-top: 18px; padding-top: 14px; }
+.rv-answer .lemma-line { margin: 0 0 6px; }
+.rv-tr { color: var(--muted); font-size: .95rem; margin-top: 8px; }
+.rv-rate { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 18px; }
+.rv-rate .btn { flex-direction: column; gap: 1px; padding: 8px 6px; justify-content: center; }
+.rv-rate small { font-weight: 400; font-size: .76rem; opacity: .8; }
+.rv-rate .again { color: var(--danger); }
+.rv-foot { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 14px; font-size: .85rem; }
+.kbd-hint { color: var(--muted); font-size: .78rem; text-align: center; margin-top: 12px; }
+.rv-done { text-align: center; padding: 40px 16px; }
+.rv-done h2 { font: 600 1.3rem var(--serif); margin-bottom: 6px; }
+.rv-done .row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 16px; }
+
+/* summaries and the Anki dialog */
+.summary-card .seg { margin: 4px 0 12px; }
+.sum-text { font-size: .98rem; }
+.sum-text[lang] { font-family: var(--serif); font-size: 1.05rem; }
+.summary-card ul { margin: 10px 0 0; padding-left: 18px; }
+.summary-card li { margin: 3px 0; }
+.anki-body ol { padding-left: 20px; margin: 10px 0; }
+.anki-body li { margin: 4px 0; }
+.anki-body .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+
+@media (max-width: 560px) {
+  .rv-card { padding: 18px 16px; }
+  .rv-sentence { font-size: 1.18rem; }
+  .kbd-hint { display: none; }
+  .rv-rate { gap: 6px; }
+}
+
 @media (max-width: 960px) {
   .reader-body, .settings-grid { grid-template-columns: 1fr; }
   .panel { position: static; max-height: none; }
@@ -404,6 +474,7 @@ hr.sep { border: 0; border-top: 1px solid var(--border); margin: 20px 0; }
     <nav>
       <a href="#/">Library</a>
       <a href="#/new">Paste text</a>
+      <a href="#/review">Review<span class="count" id="review-count"></span></a>
       <a href="#/vocab">Vocabulary</a>
       <a href="#/phrases">Phrase book</a>
       <a href="#/settings">Settings</a>
@@ -523,6 +594,8 @@ async function route() {
   }
   hideSelBtn();
   R = null;
+  reviewKeys = null;
+  refreshReviewCount();
   view.replaceChildren(el("div", { class: "loading" }, "Loading…"));
   window.scrollTo(0, 0);
   try {
@@ -532,6 +605,7 @@ async function route() {
     else if ((m = h.match(/^#\/text\/(\d+)$/))) await viewText(+m[1]);
     else if (h.startsWith("#/vocab?") && new URLSearchParams(h.split("?")[1]).get("tab") === "phrases") location.hash = "#/phrases";
     else if (h.startsWith("#/vocab")) await viewVocab();
+    else if (h.startsWith("#/review")) await viewReview();
     else if (h.startsWith("#/phrases")) await viewVocab({ phrasebook: true });
     else if (h === "#/settings") await viewSettings();
     else location.hash = "#/";
@@ -778,6 +852,9 @@ function speak(text, lang, btn, slow = false) {
 const BOOKMARK_SVG = '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" d="M5.5 3h9v14l-4.5-3.5L5.5 17z"/></svg>';
 const BOOKMARK_ON_SVG = '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" d="M5.5 3h9v14l-4.5-3.5L5.5 17z"/></svg>';
 const SLOW_SVG = '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M3 7.5h3l4-3.5v12l-4-3.5H3z"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M13 8.2a2.6 2.6 0 0 1 0 3.6"/></svg>';
+const STAR_PATH = "M10 2.4l2.3 4.7 5.2.75-3.75 3.65.9 5.15L10 14.2l-4.65 2.45.9-5.15L2.5 7.85l5.2-.75z";
+const STAR_SVG = `<svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" d="${STAR_PATH}"/></svg>`;
+const STAR_ON_SVG = `<svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" d="${STAR_PATH}"/></svg>`;
 const SPEAKER_SVG = '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M3 7.5h3l4-3.5v12l-4-3.5H3z"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M13 7.2a4 4 0 0 1 0 5.6M15.3 5a7 7 0 0 1 0 10"/></svg>';
 // A speaker button; getText is called on click so it always reads the current text.
 // A speaker button, followed by a "Slow" button unless slow is false.
@@ -921,6 +998,7 @@ async function viewText(id) {
     $("#text")?.classList.toggle("glosses", R.glosses);
     if (R.glosses && !$("#text .w[data-gloss]:not(.st-known)")) toast("Click words to look them up. Their meanings appear above them.");
   } }, "Meanings above");
+  const sumBtn = el("button", { class: "btn", title: "A short summary of the text", onclick: () => { R.active = null; applyMarks(); panelShow(summaryCard()); } }, "Summary");
   const delBtn = el("button", { class: "btn danger", onclick: async () => {
     if (!confirm(`Delete “${t.title}”? Saved words and phrases stay in your vocabulary.`)) return;
     await api(`/api/texts/${t.id}`, { method: "DELETE" });
@@ -934,7 +1012,7 @@ async function viewText(id) {
         langBadge(t.lang),
         el("h1", { lang: t.lang }, t.title),
         t.source_url ? el("a", { href: t.source_url, target: "_blank", rel: "noopener noreferrer", class: "small" }, "source ↗") : null),
-      el("div", { class: "rh-actions" }, trBtn, parBtn, glossBtn, delBtn)),
+      el("div", { class: "rh-actions" }, trBtn, parBtn, glossBtn, sumBtn, delBtn)),
     el("div", { class: "reader-body" }, article, panel)));
   updateTranslateBtn();
   renderText();
@@ -1132,7 +1210,8 @@ function renderPanelIdle() {
           el("div", { class: "p-src", lang: R.t.lang }, ph.span, ph.kind === "sentence" ? el("span", { class: "muted small" }, " · sentence") : null), el("div", { class: "p-tr" }, ph.translation))))
       : el("div", { class: "muted small" }, "None yet."));
   list.append(el("div", { class: "small", style: "margin-top:8px" }, el("a", { href: "#/phrases" }, "Open the phrase book →")));
-  p.replaceChildren(help, list);
+  const hasSummary = Object.keys(R.t.summaries || {}).length > 0;
+  p.replaceChildren(...(hasSummary ? [summaryCard()] : []), help, list);
 }
 
 function sheetClose() {
@@ -1181,6 +1260,7 @@ function renderWordCard(r) {
     el("div", { class: "wc-top" },
       el("div", { class: "surface", lang: R.t.lang }, r.surface, speakButton(() => r.surface, R.t.lang, { label: "Listen to this form" })),
       el("div", {},
+        favButton(L),
         el("button", { class: "icon", title: "Analyse again without the cache", onclick: () => lookupWord(R.active.s, R.active.e, true) }, "↻"),
         sheetClose())),
     el("div", { class: "lemma-line" },
@@ -1200,6 +1280,31 @@ function renderWordCard(r) {
     el("div", { class: "card-foot" },
       el("a", { href: "#/vocab?q=" + encodeURIComponent(L.lemma) + "&lang=" + R.t.lang }, "In vocabulary →"),
       el("button", { class: "link danger", onclick: () => forgetLemma(L) }, "Remove word"))));
+}
+
+// Star toggle for a word (lemma). w needs id and starred; it is updated in place.
+function favButton(w, onChange) {
+  const b = el("button", { type: "button", class: "fav" });
+  const draw = () => {
+    b.classList.toggle("on", !!w.starred);
+    b.title = w.starred ? "Remove star" : "Star this word";
+    b.setAttribute("aria-label", b.title);
+    b.setAttribute("aria-pressed", String(!!w.starred));
+    b.innerHTML = w.starred ? STAR_ON_SVG : STAR_SVG;
+  };
+  b.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    b.disabled = true;
+    try {
+      const r = await api(`/api/vocab/${w.id}`, { method: "PATCH", body: { starred: !w.starred } });
+      w.starred = r.starred;
+      draw();
+      onChange?.(!!w.starred);
+    } catch (err) { toast(err.message, "error"); }
+    b.disabled = false;
+  });
+  draw();
+  return b;
 }
 
 function statusButtons(L, onChange) {
@@ -1451,6 +1556,7 @@ async function viewVocab({ phrasebook = false } = {}) {
   const st = {
     tab: phrasebook ? "phrases" : "words", lang: params.get("lang") ?? pref.get("vocab.lang"), status: "", cefr: "", q: params.get("q") || "",
     layout: pref.get("vocab.layout", "grid"), group: pref.get("vocab.group", "alpha"),
+    starred: params.get("starred") === "1",
   };
   let lastRows = [];
   const stats = await api("/api/stats");
@@ -1485,6 +1591,23 @@ async function viewVocab({ phrasebook = false } = {}) {
     clearTimeout(timer); timer = setTimeout(() => { st.q = e.target.value.trim(); load(); }, 250);
   } });
   const exportLink = el("a", { class: "btn" }, "Export CSV");
+  const starBtn = el("button", { type: "button", class: "btn star-filter" + (st.starred ? " on" : ""), "aria-pressed": String(st.starred), onclick: () => {
+    st.starred = !st.starred;
+    starBtn.classList.toggle("on", st.starred); starBtn.setAttribute("aria-pressed", String(st.starred));
+    starBtn.innerHTML = (st.starred ? STAR_ON_SVG : STAR_SVG) + "<span>Starred</span>";
+    load();
+  } });
+  starBtn.innerHTML = (st.starred ? STAR_ON_SVG : STAR_SVG) + "<span>Starred</span>";
+  const ankiBtn = el("button", { type: "button", class: "btn", onclick: () => {
+    const q = new URLSearchParams();
+    if (st.lang) q.set("lang", st.lang);
+    if (st.tab === "words") {
+      if (st.status) q.set("status", st.status);
+      if (st.cefr) q.set("cefr", st.cefr);
+      if (st.starred) q.set("starred", "true");
+    }
+    ankiDialog(st.tab, q, st.tab === "words" ? lastRows.length : null);
+  } }, "Export to Anki");
   const layoutSeg = el("div", { class: "seg" });
   for (const [k, l] of [["grid", "Grid"], ["table", "Table"]]) {
     layoutSeg.append(el("button", { class: st.layout === k ? "on" : "", onclick: (e) => {
@@ -1498,7 +1621,7 @@ async function viewVocab({ phrasebook = false } = {}) {
   groupSel.setAttribute("aria-label", "Group cards");
   function syncControls() {
     const words = st.tab === "words";
-    statusSel.style.display = cefrSel.style.display = exportLink.style.display = layoutSeg.style.display = words ? "" : "none";
+    statusSel.style.display = cefrSel.style.display = exportLink.style.display = layoutSeg.style.display = starBtn.style.display = words ? "" : "none";
     groupSel.style.display = words && st.layout === "grid" ? "" : "none";
   }
   const search_ph = phrasebook ? "Search phrases or translations" : "Search word, form or meaning";
@@ -1513,6 +1636,7 @@ async function viewVocab({ phrasebook = false } = {}) {
       if (st.tab === "phrases") return drawPhrases(await api("/api/phrases?" + qs));
       if (st.status) qs.set("status", st.status);
       if (st.cefr) qs.set("cefr", st.cefr);
+      if (st.starred) qs.set("starred", "true");
       const ex = new URLSearchParams(qs); ex.delete("q");
       if (TOKEN) ex.set("token", TOKEN);
       exportLink.href = "/api/export.csv?" + ex;
@@ -1523,7 +1647,9 @@ async function viewVocab({ phrasebook = false } = {}) {
   function drawWords(rows) {
     lastRows = rows;
     if (!rows.length) {
-      results.replaceChildren(el("div", { class: "empty" }, el("p", {}, st.q || st.status || st.cefr ? "No words match these filters." : "No words yet. Click words while reading to collect them.")));
+      results.replaceChildren(el("div", { class: "empty" }, el("p", {}, st.starred && !st.q && !st.status && !st.cefr
+        ? "No starred words yet. Use the star on a word card to add one."
+        : st.q || st.status || st.cefr || st.starred ? "No words match these filters." : "No words yet. Click words while reading to collect them.")));
       return;
     }
     if (st.layout === "grid") return drawGrid(rows);
@@ -1539,7 +1665,7 @@ async function viewVocab({ phrasebook = false } = {}) {
           try { await setStatus(w.id, e.target.value); } catch (err) { toast(err.message, "error"); }
         })),
         el("td", { class: "muted" }, w.occurrences),
-        el("td", {}, el("button", { class: "icon", title: "Delete", onclick: async (e) => {
+        el("td", { style: "white-space:nowrap" }, favButton(w), el("button", { class: "icon", title: "Delete", onclick: async (e) => {
           e.stopPropagation();
           if (!confirm(`Delete “${w.lemma}”?`)) return;
           await api(`/api/vocab/${w.id}`, { method: "DELETE" });
@@ -1588,7 +1714,8 @@ async function viewVocab({ phrasebook = false } = {}) {
   function card(w) {
     const c = el("button", { type: "button", class: `vcard st-${w.status}`, onclick: () => openWord(w, c) },
       el("div", { class: "vc-top" },
-        el("span", { class: "vc-word", lang: w.lang }, w.stressed || w.lemma),
+        el("span", { class: "vc-word", lang: w.lang }, w.stressed || w.lemma,
+          w.starred ? Object.assign(el("span", { class: "vc-star", title: "Starred" }), { innerHTML: STAR_ON_SVG }) : null),
         w.cefr ? el("span", { class: "cefr cefr-" + w.cefr[0] }, w.cefr) : null),
       el("div", { class: "vc-gloss" }, w.gloss || "—"),
       el("div", { class: "vc-meta" }, [w.pos, w.occurrences > 1 ? `seen ${w.occurrences}×` : null].filter(Boolean).join(" · ")));
@@ -1639,7 +1766,13 @@ async function viewVocab({ phrasebook = false } = {}) {
       body.replaceChildren(
         el("div", { class: "wc-top" },
           el("div", {}, langBadge(d.lang)),
-          el("button", { class: "icon", title: "Close", onclick: () => dlg.close() }, "✕")),
+          el("div", {},
+            favButton(d, (on) => {
+              w.starred = on;
+              if (st.starred && !on) { lastRows = lastRows.filter((x) => x.id !== w.id); drawWords(lastRows); }
+              else refreshCard();
+            }),
+            el("button", { class: "icon", title: "Close", onclick: () => dlg.close() }, "✕"))),
         el("div", { class: "lemma-line" },
           el("span", { class: "lemma", lang: d.lang }, d.stressed || d.lemma),
           speakButton(() => d.lemma, d.lang),
@@ -1701,7 +1834,7 @@ async function viewVocab({ phrasebook = false } = {}) {
     el("div", { class: "page-head" }, el("h1", {}, phrasebook ? "Phrase book" : "Vocabulary"),
       phrasebook ? el("a", { class: "btn", href: "#/vocab" }, "Words →") : el("a", { class: "btn", href: "#/phrases" }, "Phrase book →")),
     statsBox,
-    el("div", { class: "filters" }, langSel, statusSel, cefrSel, search, layoutSeg, groupSel, exportLink),
+    el("div", { class: "filters" }, langSel, statusSel, cefrSel, starBtn, search, layoutSeg, groupSel, exportLink, ankiBtn),
     results);
   syncControls();
   drawStats();
@@ -2170,6 +2303,330 @@ async function viewSettings() {
 
   view.replaceChildren(el("div", { class: "page-head" }, el("h1", {}, "Settings")), el("div", { class: "settings-grid" }, el("div", {}, langCard, form, speechCard, usageCard), side));
   fill();
+}
+
+// ------------------------------------------------------------------ Anki export
+function ankiDialog(what, params, count) {
+  let notetype = pref.get("anki.notetype", "cloze");
+  const link = el("a", { class: "btn primary", download: "" }, "Download");
+  const desc = el("p", { class: "muted small" });
+  const DESC = {
+    words: {
+      cloze: "Anki's Cloze type: each word's example sentence with the word hidden and its meaning as the hint. On the back: the dictionary form, meaning and sentence translation.",
+      basic: "Anki's Basic type: the word in its example sentence on the front; the dictionary form, meaning and sentence translation on the back.",
+    },
+    phrases: {
+      cloze: "Anki's Cloze type: each phrase hidden in the sentence it came from, with its translation as the hint.",
+      basic: "Anki's Basic type: the phrase on the front, its translation on the back.",
+    },
+  };
+  const update = () => {
+    const q = new URLSearchParams(params);
+    q.set("what", what); q.set("notetype", notetype);
+    if (TOKEN) q.set("token", TOKEN);
+    link.href = "/api/export/anki.txt?" + q;
+    desc.textContent = DESC[what][notetype];
+  };
+  const seg = el("div", { class: "seg", role: "group", "aria-label": "Card type" });
+  for (const [k, l] of [["cloze", "Fill in the blank"], ["basic", "Front and back"]]) {
+    seg.append(el("button", { type: "button", class: notetype === k ? "on" : "", onclick: (e) => {
+      notetype = k; pref.set("anki.notetype", k);
+      seg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === e.currentTarget));
+      update();
+    } }, l));
+  }
+  const lang = params.get("lang");
+  const deck = "Language Reader" + (lang ? "::" + langName(lang) : "");
+  const filters = [lang ? langName(lang) : "all languages", params.get("status") && STATUS_LABEL[params.get("status")].toLowerCase(),
+    params.get("cefr") && (params.get("cefr") === "none" ? "no level" : params.get("cefr")), params.get("starred") && "starred only"].filter(Boolean);
+  const dlg = el("dialog", { class: "word-dialog", onclose: () => dlg.remove() },
+    el("div", { class: "wd-body anki-body" },
+      el("div", { class: "wc-top" }, el("h2", { style: "margin:0" }, what === "words" ? "Export words to Anki" : "Export phrases to Anki"),
+        el("button", { class: "icon", title: "Close", onclick: () => dlg.close() }, "✕")),
+      el("p", { class: "small" }, (count != null ? `${plural(count, "word")}, ` : "") + "using the current filters: " + filters.join(", ") + "."),
+      seg, desc,
+      el("ol", { class: "small" },
+        el("li", {}, "Download the file."),
+        el("li", {}, "In Anki, choose File → Import and pick it. The note type and the deck ", el("b", {}, deck), " are set by the file."),
+        el("li", {}, "Exporting and importing again later updates the same notes instead of adding duplicates.")),
+      el("div", { class: "row" }, el("button", { class: "btn", onclick: () => dlg.close() }, "Close"), link)));
+  dlg.addEventListener("click", (e) => { if (e.target === dlg) dlg.close(); });
+  update();
+  document.body.append(dlg);
+  dlg.showModal();
+}
+
+// ------------------------------------------------------------------ summaries
+function summaryCard() {
+  const target = MODELS.target_language || "your language";
+  let kind = pref.get("summary.kind", "target");
+  const body = el("div");
+  const seg = el("div", { class: "seg", role: "group", "aria-label": "Summary language" });
+  for (const [k, l] of [["target", `In ${target}`], ["simple", `Simple ${langName(R.t.lang)}`]]) {
+    seg.append(el("button", { type: "button", class: kind === k ? "on" : "", onclick: (e) => {
+      kind = k; pref.set("summary.kind", k);
+      seg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === e.currentTarget));
+      draw();
+    } }, l));
+  }
+  const tid = R.t.id;
+  function draw() {
+    const s = (R.t.summaries || {})[kind];
+    if (!s) {
+      body.replaceChildren(
+        el("p", { class: "muted small" }, kind === "simple"
+          ? `A few short sentences in plain ${langName(R.t.lang)}, as reading practice before the full text.`
+          : `What the text says, in a few sentences of ${target}.`),
+        el("button", { class: "btn primary", onclick: () => make() }, "Summarise"));
+      return;
+    }
+    const tl = kind === "simple" ? R.t.lang : null;
+    body.replaceChildren(...[
+      el("div", { class: "sum-text", lang: tl }, s.summary, " ", tl ? speakButton(() => s.summary, tl, { label: "Listen to the summary" }) : null),
+      s.key_points.length ? el("ul", { lang: tl }, s.key_points.map((x) => el("li", {}, x))) : null,
+      escalateRow(s.model, (m) => make(m)),
+    ].filter(Boolean));
+  }
+  async function make(model = null) {
+    body.replaceChildren(el("div", { class: "spinner" }, model ? `Asking ${modelLabel(model)}…` : "Summarising…"));
+    try {
+      const r = await api(`/api/texts/${tid}/summary`, { method: "POST", body: { kind, model } });
+      if (!R || R.t.id !== tid) return;
+      (R.t.summaries ||= {})[kind] = r;
+    } catch (err) { toast(err.message, "error"); }
+    draw();
+  }
+  draw();
+  return el("div", { class: "card summary-card" },
+    el("div", { class: "wc-top" }, el("h2", { style: "margin:0" }, "Summary"), sheetClose()),
+    seg, body);
+}
+
+// ------------------------------------------------------------------ review
+let reviewKeys = null;  // keyboard handler of the open review page
+document.addEventListener("keydown", (e) => reviewKeys?.(e));
+
+async function refreshReviewCount() {
+  const badge = $("#review-count");
+  if (!badge) return;
+  // The new-word limit is per language, as on the Review page.
+  const limit = Number(pref.get("review.perDay", "20")) || 20;
+  try {
+    const rs = await Promise.all(Object.keys(LANGS).map((c) => api(`/api/review?count_only=true&lang=${c}&new_limit=${limit}`)));
+    const due = rs.reduce((n, r) => n + r.due, 0), fresh = rs.reduce((n, r) => n + Math.min(r.new_left, r.new_total), 0);
+    const n = due + fresh;
+    badge.textContent = n ? (n > 99 ? "99+" : String(n)) : "";
+    badge.title = n ? `${plural(due, "review")} due, ${plural(fresh, "new word")} to learn today` : "";
+  } catch { badge.textContent = ""; }
+}
+
+function relTime(ts) {
+  const ms = new Date(ts.replace(" ", "T") + "Z") - Date.now();
+  const min = Math.round(ms / 60000);
+  if (min < 1) return "in a moment";
+  if (min < 60) return `in ${plural(min, "minute")}`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `in ${plural(h, "hour")}`;
+  return `in ${plural(Math.round(h / 24), "day")}`;
+}
+
+const normWord = (s) => stripStress(s || "").normalize("NFC").toLocaleLowerCase().replace(/[^\p{L}\p{M}\p{N}'’:-]/gu, "");
+
+async function viewReview() {
+  const stats = await api("/api/stats");
+  const codes = langsWithData(stats);
+  const rv = {
+    lang: pref.get("review.lang", codes[0] || ""), starred: pref.get("review.starred") === "1",
+    mode: pref.get("review.mode", "recognise"), perDay: Number(pref.get("review.perDay", "20")) || 20, extra: 0,
+  };
+  if (rv.lang && !codes.includes(rv.lang)) rv.lang = codes[0] || "";
+  let info = null, queue = [], total = 0, done = 0, cur = null, revealed = false, busy = false, newInBatch = 0;
+  let ui = {};
+  const stage = el("div", { class: "rv-stage" });
+  const barFill = el("div");
+  const meta = el("div", { class: "rv-meta" });
+
+  const langSel = el("select", { "aria-label": "Language", onchange: (e) => { rv.lang = e.target.value; pref.set("review.lang", rv.lang); rv.extra = 0; load(); } },
+    codes.map((c) => el("option", { value: c, selected: c === rv.lang }, langName(c))));
+  const modeSeg = el("div", { class: "seg", role: "group", "aria-label": "Direction" });
+  for (const [k, l, title] of [["recognise", "Word → meaning", "See the word in its sentence, recall what it means"],
+                               ["recall", "Meaning → word", "See the sentence with a gap and the meaning, recall the word"]]) {
+    modeSeg.append(el("button", { type: "button", title, class: rv.mode === k ? "on" : "", onclick: (e) => {
+      rv.mode = k; pref.set("review.mode", k);
+      modeSeg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === e.currentTarget));
+      if (cur) drawCard();
+    } }, l));
+  }
+  const starBtn = el("button", { type: "button", class: "btn star-filter" + (rv.starred ? " on" : ""), "aria-pressed": String(rv.starred), onclick: () => {
+    rv.starred = !rv.starred; pref.set("review.starred", rv.starred ? "1" : "0");
+    starBtn.classList.toggle("on", rv.starred); starBtn.setAttribute("aria-pressed", String(rv.starred));
+    starBtn.innerHTML = (rv.starred ? STAR_ON_SVG : STAR_SVG) + "<span>Starred only</span>";
+    load();
+  } });
+  starBtn.innerHTML = (rv.starred ? STAR_ON_SVG : STAR_SVG) + "<span>Starred only</span>";
+  const perDay = el("input", { type: "number", min: "0", max: "200", value: String(rv.perDay), onchange: (e) => {
+    rv.perDay = Math.max(0, Math.min(200, Number(e.target.value) || 0)); e.target.value = rv.perDay;
+    pref.set("review.perDay", String(rv.perDay)); load();
+  } });
+
+  async function load() {
+    stage.replaceChildren(el("div", { class: "loading" }, "Loading…"));
+    const q = new URLSearchParams({ new_limit: String(rv.perDay + rv.extra) });
+    if (rv.lang) q.set("lang", rv.lang);
+    if (rv.starred) q.set("starred", "true");
+    try { info = await api("/api/review?" + q); }
+    catch (err) { stage.replaceChildren(errorCard(err)); return; }
+    queue = info.cards.slice(); total = queue.length; done = 0;
+    newInBatch = queue.filter((c) => c.new).length;
+    next();
+  }
+
+  function progress() {
+    barFill.style.width = total ? `${(100 * done) / total}%` : "0";
+    const due = queue.filter((c) => !c.new).length + (cur && !cur.new ? 1 : 0);
+    const fresh = queue.filter((c) => c.new).length + (cur && cur.new ? 1 : 0);
+    meta.replaceChildren(el("span", {}, cur ? `${plural(due, "review")} · ${plural(fresh, "new word")} left` : ""),
+      el("span", {}, `Reviewed today: ${info.reviewed_today + done}`));
+  }
+
+  function next() {
+    revealed = false; busy = false;
+    cur = queue.shift() || null;
+    progress();
+    if (!cur) return finished();
+    drawCard();
+  }
+
+  function finished() {
+    const moreNew = info.new_total - newInBatch;
+    if (!total && !info.due && !info.new_total) {
+      stage.replaceChildren(el("div", { class: "empty" },
+        el("p", {}, rv.starred ? "No starred words to review in this language." : "No words to review yet. Click words while reading; each one becomes a card here."),
+        el("a", { class: "btn", href: "#/" }, "Go to the library")));
+      return;
+    }
+    stage.replaceChildren(el("div", { class: "rv-done rv-card" },
+      el("h2", {}, total ? "Done for now" : "Nothing due right now"),
+      el("p", { class: "muted" }, info.next_due ? `The next review is due ${relTime(info.next_due)}.` : "No reviews are scheduled yet."),
+      moreNew > 0 ? el("p", { class: "muted small" }, `${plural(moreNew, "new word")} still waiting. You've introduced ${info.new_today + newInBatch} today.`) : null,
+      el("div", { class: "row" },
+        moreNew > 0 ? el("button", { class: "btn primary", onclick: () => { rv.extra += 10; load(); } }, `Learn ${Math.min(10, moreNew)} more`) : null,
+        el("a", { class: "btn", href: "#/" }, "Back to reading"))));
+    refreshReviewCount();
+  }
+
+  function sentence(c, gap) {
+    const ex = c.example;
+    if (!ex || !ex.word) return null;
+    // The hidden word is only added on reveal, so it can't be selected or read out early.
+    ui.gap = gap ? el("span", { class: "rv-gap", style: `min-width:${Math.max(2.5, ex.word.length * 0.62)}em`, "aria-label": "missing word" }, "\u00a0") : null;
+    return el("div", { class: "rv-sentence", lang: c.lang }, ex.before, gap ? ui.gap : el("span", { class: "rv-word" }, ex.word), ex.after);
+  }
+
+  function drawCard() {
+    const c = cur, ex = c.example, recall = rv.mode === "recall";
+    ui = {};
+    const front = [];
+    if (recall) {
+      const hint = (ex && ex.gloss_in_context) || c.gloss || "—";
+      const s = sentence(c, true);
+      if (s) front.push(s, el("div", { class: "rv-hint" }, "Meaning here: ", el("b", {}, hint)));
+      else front.push(el("div", { class: "rv-lemma-q" }, hint), el("div", { class: "rv-hint" }, `Which ${langName(c.lang)} word is this?`));
+      ui.input = el("input", { type: "text", placeholder: "Type the word (optional)", autocomplete: "off", autocapitalize: "off", spellcheck: "false", lang: c.lang,
+        "aria-label": "Your answer", onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); reveal(); } } });
+      front.push(el("div", { class: "rv-input" }, ui.input));
+    } else {
+      const s = sentence(c, false);
+      front.push(s || el("div", { class: "rv-lemma-q", lang: c.lang }, c.stressed || c.lemma));
+      front.push(el("div", { class: "rv-hint" }, speakButton(() => (ex && ex.word ? ex.before + ex.word + ex.after : c.lemma), c.lang, { label: "Listen" }),
+        " What does ", el("b", { lang: c.lang }, ex && ex.word ? ex.word : c.stressed || c.lemma), " mean here?"));
+    }
+    ui.answer = el("div", { class: "rv-answer-slot" });
+    ui.show = el("div", { class: "rv-show" }, el("button", { class: "btn primary", onclick: () => reveal() }, "Show answer"));
+    stage.replaceChildren(
+      el("div", { class: "rv-card" },
+        el("div", { class: "rv-head" },
+          el("div", { class: "tags" }, langBadge(c.lang), c.new ? el("span", { class: "badge" }, "New") : el("span", {}, `Review ${c.reps + 1}`),
+            c.cefr ? el("span", { class: "cefr cefr-" + c.cefr[0] }, c.cefr) : null),
+          favButton(c)),
+        ...front, ui.show, ui.answer),
+      el("div", { class: "kbd-hint" }, "Space or Enter shows the answer · 1 Again · 2 Hard · 3 Good · 4 Easy"));
+    if (ui.input && !COARSE) ui.input.focus();
+  }
+
+  function reveal() {
+    if (revealed || !cur) return;
+    revealed = true;
+    const c = cur, ex = c.example;
+    let suggest = 3;
+    if (ui.gap) { ui.gap.textContent = ex.word; ui.gap.classList.add("filled"); ui.gap.removeAttribute("aria-label"); }
+    const typed = ui.input?.value.trim();
+    if (ui.input) ui.input.disabled = true;
+    const check = typed ? (() => {
+      const ok = [ex?.word, c.lemma, c.stressed].some((x) => x && normWord(x) === normWord(typed));
+      if (!ok) suggest = 1;
+      return el("div", { class: "rv-check " + (ok ? "ok" : "bad") }, ok ? "Correct." : `Not quite: you wrote “${typed}”.`);
+    })() : null;
+    const ctx = ex && ex.gloss_in_context && ex.gloss_in_context !== c.gloss ? ex.gloss_in_context : null;
+    const rate = el("div", { class: "rv-rate" }, [[1, "Again", "again"], [2, "Hard", ""], [3, "Good", "primary"], [4, "Easy", ""]].map(([g, l, cls]) =>
+      el("button", { type: "button", class: "btn " + cls, "data-rating": g, onclick: () => rateCard(g) }, l, el("small", {}, c.labels[g]))));
+    ui.show.remove();
+    ui.answer.replaceChildren(el("div", { class: "rv-answer" },
+      check,
+      el("div", { class: "lemma-line" },
+        el("span", { class: "lemma", lang: c.lang }, c.stressed || c.lemma),
+        speakButton(() => c.lemma, c.lang, { label: "Listen to the dictionary form" }),
+        el("span", { class: "pos" }, c.pos)),
+      el("div", { class: "gloss" }, c.gloss || "—"),
+      ctx ? el("div", { class: "kv" }, el("span", { class: "k" }, "Here"), ctx) : null,
+      c.other_meanings.length ? el("div", { class: "kv" }, el("span", { class: "k" }, "Also"), c.other_meanings.join("; ")) : null,
+      ex && ex.translation ? el("div", { class: "rv-tr" }, ex.translation) : null,
+      rv.mode === "recall" && ex && ex.word ? el("div", { class: "rv-tr" }, speakButton(() => ex.before + ex.word + ex.after, c.lang, { label: "Listen to the sentence" }), " Listen to the sentence") : null,
+      c.notes ? el("div", { class: "notes" }, c.notes) : null,
+      rate,
+      el("div", { class: "rv-foot" },
+        el("button", { class: "link", onclick: markKnown }, "I know this word: stop reviewing it"),
+        el("a", { href: "#/vocab?q=" + encodeURIComponent(c.lemma) + "&lang=" + c.lang }, "In vocabulary →"))));
+    rate.querySelector(`[data-rating="${suggest}"]`)?.focus({ preventScroll: true });
+  }
+
+  async function rateCard(g) {
+    if (!revealed || busy || !cur) return;
+    busy = true;
+    try {
+      const r = await api(`/api/review/${cur.id}`, { method: "POST", body: { rating: g } });
+      done++;
+      if (r.card) { queue.push(r.card); total++; }
+    } catch (err) { toast(err.message, "error"); busy = false; return; }
+    next();
+  }
+
+  async function markKnown() {
+    if (busy || !cur) return;
+    busy = true;
+    try {
+      await api(`/api/vocab/${cur.id}`, { method: "PATCH", body: { status: "known" } });
+      toast(`“${cur.lemma}” marked as known`);
+      queue = queue.filter((x) => x.id !== cur.id);
+      done++;
+    } catch (err) { toast(err.message, "error"); busy = false; return; }
+    next();
+  }
+
+  reviewKeys = (e) => {
+    if (!cur || e.metaKey || e.ctrlKey || e.altKey || document.querySelector("dialog[open]")) return;
+    const typing = e.target.closest?.("input, textarea, select");
+    if (!revealed && (e.key === " " || e.key === "Enter") && !typing) { e.preventDefault(); reveal(); }
+    else if (revealed && /^[1-4]$/.test(e.key) && !typing) { e.preventDefault(); rateCard(Number(e.key)); }
+  };
+
+  view.replaceChildren(el("div", { class: "rv-wrap" },
+    el("div", { class: "page-head" }, el("h1", {}, "Review")),
+    el("div", { class: "rv-tools" }, codes.length > 1 ? langSel : null, modeSeg, starBtn,
+      el("label", {}, "New words per day", perDay)),
+    meta, el("div", { class: "rv-bar" }, barFill),
+    stage));
+  load();
 }
 
 (async () => {

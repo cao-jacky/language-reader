@@ -133,6 +133,42 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     created_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Flashcard scheduling (FSRS), one row per word that has been reviewed.
+-- Words without a row are new cards. Times are UTC 'YYYY-MM-DD HH:MM:SS'.
+CREATE TABLE IF NOT EXISTS review_state (
+    lemma_id     INTEGER PRIMARY KEY REFERENCES lemmas(id) ON DELETE CASCADE,
+    due          TEXT NOT NULL,
+    stability    REAL NOT NULL,
+    difficulty   REAL NOT NULL,
+    reps         INTEGER NOT NULL DEFAULT 0,
+    lapses       INTEGER NOT NULL DEFAULT 0,
+    last_review  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS review_log (
+    id           INTEGER PRIMARY KEY,
+    lemma_id     INTEGER REFERENCES lemmas(id) ON DELETE SET NULL,
+    lang         TEXT NOT NULL,
+    rating       INTEGER NOT NULL,          -- 1 again, 2 hard, 3 good, 4 easy
+    was_new      INTEGER NOT NULL DEFAULT 0,
+    interval_days REAL,
+    reviewed_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Summaries of a text: kind 'target' (in the learner's language) or
+-- 'simple' (in the text's own language, simplified).
+CREATE TABLE IF NOT EXISTS summaries (
+    text_id     INTEGER NOT NULL REFERENCES texts(id) ON DELETE CASCADE,
+    kind        TEXT NOT NULL,
+    summary     TEXT NOT NULL,
+    key_points  TEXT,          -- JSON array
+    model       TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (text_id, kind)
+);
+
+CREATE INDEX IF NOT EXISTS idx_review_due ON review_state(due);
+CREATE INDEX IF NOT EXISTS idx_review_log_time ON review_log(reviewed_at);
 CREATE INDEX IF NOT EXISTS idx_chat_messages ON chat_messages(chat_id, id);
 CREATE INDEX IF NOT EXISTS idx_sentences_text ON sentences(text_id);
 CREATE INDEX IF NOT EXISTS idx_occ_lemma ON occurrences(lemma_id);
@@ -185,3 +221,6 @@ def _migrate(conn: sqlite3.Connection) -> None:
     cols = {r[1] for r in conn.execute("PRAGMA table_info(phrases)")}
     if "kind" not in cols:
         conn.execute("ALTER TABLE phrases ADD COLUMN kind TEXT NOT NULL DEFAULT 'selection'")
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(lemmas)")}
+    if "starred" not in cols:
+        conn.execute("ALTER TABLE lemmas ADD COLUMN starred INTEGER NOT NULL DEFAULT 0")

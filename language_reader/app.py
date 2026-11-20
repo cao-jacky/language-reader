@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import csv
 import hmac
+import html
 import io
 import json
 import os
@@ -24,7 +25,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
-from . import analysis, db, languages, llm, morph, settings, textproc, tts, usage
+from . import analysis, db, languages, llm, morph, settings, srs, textproc, tts, usage
 
 AUTH_TOKEN = os.environ.get("AUTH_TOKEN", "").strip()
 TEMPLATE = Path(__file__).resolve().parent / "templates" / "index.html"
@@ -188,6 +189,35 @@ def create_text(req: NewText) -> dict:
     return {"id": tid, "lang": lang, "existing": False}
 
 
+class SummaryReq(BaseModel):
+    kind: str = "target"
+    model: str | None = None
+
+
+def _summary_dict(r) -> dict:
+    return {"kind": r["kind"], "summary": r["summary"], "key_points": json.loads(r["key_points"] or "[]"),
+            "model": r["model"], "created_at": r["created_at"]}
+
+
+@app.post("/api/texts/{tid}/summary")
+def summarise_text(tid: int, req: SummaryReq) -> dict:
+    if req.kind not in ("target", "simple"):
+        raise HTTPException(400, "kind must be target or simple")
+    with db.tx() as c:
+        t = _text_or_404(c, tid)
+    s = _settings_for(req.model)
+    a = _backend(analysis.summarise, s, t["lang"], t["title"], t["body"], req.kind)
+    with db.tx() as c:
+        c.execute(
+            """INSERT INTO summaries(text_id, kind, summary, key_points, model) VALUES(?, ?, ?, ?, ?)
+               ON CONFLICT(text_id, kind) DO UPDATE SET summary = excluded.summary, key_points = excluded.key_points,
+                 model = excluded.model, created_at = datetime('now')""",
+            (tid, req.kind, a["summary"].strip(), json.dumps(a["key_points"], ensure_ascii=False), s["llm_model"]),
+        )
+        r = c.execute("SELECT * FROM summaries WHERE text_id = ? AND kind = ?", (tid, req.kind)).fetchone()
+    return _summary_dict(r)
+
+
 @app.get("/api/texts/{tid}")
 def get_text(tid: int) -> dict:
     with db.tx() as c:
@@ -217,6 +247,7 @@ def get_text(tid: int) -> dict:
             )
         ]
         t["surfaces"] = _surfaces(c, t["lang"])
+        t["summaries"] = {r["kind"]: _summary_dict(r) for r in c.execute("SELECT * FROM summaries WHERE text_id = ?", (tid,))}
     return t
 
 
@@ -497,6 +528,7 @@ _VOCAB_SQL = """
     SELECT l.*, COUNT(o.id) AS occurrences, MAX(o.created_at) AS last_seen,
            (SELECT o2.sentence_text FROM occurrences o2 WHERE o2.lemma_id = l.id ORDER BY o2.id LIMIT 1) AS example,
            (SELECT o2.surface FROM occurrences o2 WHERE o2.lemma_id = l.id ORDER BY o2.id LIMIT 1) AS example_surface,
+           (SELECT o2.gloss_in_context FROM occurrences o2 WHERE o2.lemma_id = l.id ORDER BY o2.id LIMIT 1) AS example_gloss,
            (SELECT s.translation FROM occurrences o2 JOIN sentences s ON s.id = o2.sentence_id
               WHERE o2.lemma_id = l.id ORDER BY o2.id LIMIT 1) AS example_translation
     FROM lemmas l LEFT JOIN occurrences o ON o.lemma_id = l.id
@@ -506,8 +538,10 @@ _VOCAB_SQL = """
 """
 
 
-def _vocab_rows(lang: str, status: str, cefr: str, q: str) -> list[dict]:
+def _vocab_rows(lang: str, status: str, cefr: str, q: str, starred: bool = False) -> list[dict]:
     where, args = [], []
+    if starred:
+        where.append("l.starred = 1")
     if lang:
         where.append("l.lang = ?")
         args.append(lang)
@@ -533,8 +567,8 @@ def _vocab_rows(lang: str, status: str, cefr: str, q: str) -> list[dict]:
 
 
 @app.get("/api/vocab")
-def list_vocab(lang: str = "", status: str = "", cefr: str = "", q: str = "") -> list[dict]:
-    return _vocab_rows(lang, status, cefr, q)
+def list_vocab(lang: str = "", status: str = "", cefr: str = "", q: str = "", starred: bool = False) -> list[dict]:
+    return _vocab_rows(lang, status, cefr, q, starred)
 
 
 @app.get("/api/vocab/{lid}")
@@ -564,6 +598,7 @@ class VocabPatch(BaseModel):
     gloss: str | None = None
     notes: str | None = None
     cefr: str | None = None
+    starred: bool | None = None
 
 
 @app.patch("/api/vocab/{lid}")
@@ -580,6 +615,9 @@ def patch_vocab(lid: int, req: VocabPatch) -> dict:
     if req.notes is not None:
         sets.append("notes = ?")
         args.append(req.notes.strip())
+    if req.starred is not None:
+        sets.append("starred = ?")
+        args.append(int(req.starred))
     if req.cefr is not None:
         if req.cefr and req.cefr not in analysis.CEFR:
             raise HTTPException(400, "cefr must be A1–C2 or blank")
@@ -604,21 +642,247 @@ def delete_vocab(lid: int) -> dict:
 
 
 @app.get("/api/export.csv")
-def export_csv(lang: str = "", status: str = "", cefr: str = "") -> Response:
-    rows = _vocab_rows(lang, status, cefr, "")
+def export_csv(lang: str = "", status: str = "", cefr: str = "", starred: bool = False) -> Response:
+    rows = _vocab_rows(lang, status, cefr, "", starred)
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["lang", "lemma", "stressed", "pos", "gloss", "other_meanings", "cefr", "status",
-                "example", "example_translation", "notes"])
+                "example", "example_translation", "notes", "starred"])
     for r in rows:
         w.writerow([r["lang"], r["lemma"], r["stressed"], r["pos"], r["gloss"], "; ".join(r["other_meanings"]),
-                    r["cefr"] or "", r["status"], r["example"] or "", r["example_translation"] or "", r["notes"] or ""])
+                    r["cefr"] or "", r["status"], r["example"] or "", r["example_translation"] or "", r["notes"] or "",
+                    "yes" if r.get("starred") else ""])
     name = f"vocabulary-{lang or 'all'}-{time.strftime('%Y%m%d')}.csv"
     return Response(
         "﻿" + buf.getvalue(),  # BOM so spreadsheet apps read UTF-8
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{name}"'},
     )
+
+
+# --------------------------------------------------------------------------- #
+# Anki export
+# --------------------------------------------------------------------------- #
+
+
+def _anki_field(x: str | None) -> str:
+    return html.escape(x or "", quote=False).replace("\t", " ").replace("\r", "").replace("\n", "<br>")
+
+
+def _anki_mark(sentence: str, surface: str, fmt_word) -> str | None:
+    """Sentence with the first occurrence of surface replaced by fmt_word(escaped word)."""
+    i = sentence.find(surface) if surface else -1
+    if i < 0:
+        i = sentence.lower().find(surface.lower()) if surface else -1
+    if i < 0:
+        return None
+    word = sentence[i : i + len(surface)]
+    return _anki_field(sentence[:i]) + fmt_word(_anki_field(word)) + _anki_field(sentence[i + len(surface) :])
+
+
+def _anki_tag(x: str | None) -> str:
+    return "".join(ch if ch.isalnum() or ch in "-_:" else "_" for ch in (x or "")).strip("_")
+
+
+@app.get("/api/export/anki.txt")
+def export_anki(lang: str = "", status: str = "", cefr: str = "", starred: bool = False,
+                what: str = "words", notetype: str = "basic") -> Response:
+    """Tab-separated notes for Anki's File > Import (Anki 2.1.55+ reads the
+    header lines). A GUID column makes a re-import update the same notes."""
+    if what not in ("words", "phrases") or notetype not in ("basic", "cloze"):
+        raise HTTPException(400, "what must be words or phrases; notetype basic or cloze")
+    cloze = notetype == "cloze"
+    lines = []
+    if what == "words":
+        for r in _vocab_rows(lang, status, cefr, "", starred):
+            head = _anki_field(r["stressed"] or r["lemma"])
+            meaning = _anki_field(r["gloss"])
+            tr = f"<br><i>{_anki_field(r['example_translation'])}</i>" if r.get("example_translation") else ""
+            sentence, surface = r.get("example") or "", r.get("example_surface") or ""
+            if cloze:
+                # Hint with the meaning in this sentence ("in the library"), which fits the gap
+                # better than the dictionary meaning ("library").
+                ctx = _anki_field(r.get("example_gloss")) if _anki_mark(sentence, surface, str) else ""
+                hint_text = (ctx or meaning).replace("}", ")")
+                hint = "::" + hint_text if hint_text else ""
+                text = _anki_mark(sentence, surface, lambda w: "{{c1::" + w + hint + "}}") or ("{{c1::" + head + hint + "}}")
+                back = f"<b>{head}</b> — {meaning}{tr}"
+            else:
+                text = _anki_mark(sentence, surface, lambda w: f"<b>{w}</b>") or head
+                pos = f" <i>({_anki_field(r['pos'])})</i>" if r.get("pos") else ""
+                back = f"<b>{head}</b>{pos} — {meaning}{tr}"
+            tags = " ".join(t for t in (r["lang"], _anki_tag(r["cefr"]), r["status"], "starred" if r.get("starred") else "") if t)
+            lines.append([f"lr-{notetype}-w{r['id']}", text, back, tags])
+    else:
+        where, args = [], []
+        if lang:
+            where.append("lang = ?")
+            args.append(lang)
+        with db.tx() as c:
+            rows = [dict(x) for x in c.execute(
+                "SELECT * FROM phrases" + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY id", args)]
+        for r in rows:
+            tr = _anki_field(r["translation"])
+            lit = f"<br><small>Literally: {_anki_field(r['literal'])}</small>" if r.get("literal") and r["literal"] != r["translation"] else ""
+            if cloze and r["kind"] != "sentence":
+                hint = "::" + tr.replace("}", ")") if tr else ""
+                text = _anki_mark(r.get("context") or "", r["span"], lambda w: "{{c1::" + w + hint + "}}") \
+                    or ("{{c1::" + _anki_field(r["span"]) + hint + "}}")
+                back = tr + lit
+            elif cloze:
+                text = "{{c1::" + _anki_field(r["span"]) + "}}"
+                back = tr + lit
+            else:
+                text = _anki_field(r["span"])
+                back = tr + lit
+            lines.append([f"lr-{notetype}-p{r['id']}", text, back, " ".join(t for t in (r["lang"], "phrase") if t)])
+    deck = "Language Reader" + (f"::{languages.name(lang)}" if lang else "")
+    header = [
+        "#separator:tab", "#html:true", f"#notetype:{'Cloze' if cloze else 'Basic'}",
+        f"#deck:{deck}", "#guid column:1", "#tags column:4",
+    ]
+    body = "\n".join(header + ["\t".join(l) for l in lines]) + "\n"
+    name = f"anki-{what}-{notetype}-{lang or 'all'}-{time.strftime('%Y%m%d')}.txt"
+    return Response(body, media_type="text/plain; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+# --------------------------------------------------------------------------- #
+# flashcard review
+# --------------------------------------------------------------------------- #
+
+_CEFR_RANK = "CASE l.cefr WHEN 'A1' THEN 1 WHEN 'A2' THEN 2 WHEN 'B1' THEN 3 WHEN 'B2' THEN 4 WHEN 'C1' THEN 5 WHEN 'C2' THEN 6 ELSE 7 END"
+
+
+def _card(c, row, at) -> dict:
+    """A flashcard: the word with one of its example sentences, split around it."""
+    state = None
+    if row["last_review"] is not None:
+        state = {k: row[k] for k in ("due", "stability", "difficulty", "reps", "lapses", "last_review")}
+    occ = c.execute(
+        """SELECT o.surface, o.sentence_text, o.gloss_in_context, o.start, s.start AS sstart, s.translation
+           FROM occurrences o LEFT JOIN sentences s ON s.id = o.sentence_id
+           WHERE o.lemma_id = ? AND o.sentence_text IS NOT NULL AND o.sentence_text <> ''
+           ORDER BY o.id DESC""",
+        (row["id"],),
+    ).fetchall()
+    example = None
+    if occ:
+        o = occ[(state["reps"] if state else 0) % len(occ)]  # a different sentence each review
+        sent, surf = o["sentence_text"], o["surface"]
+        i = o["start"] - o["sstart"] if o["sstart"] is not None else -1
+        if not (0 <= i and sent[i : i + len(surf)] == surf):
+            i = sent.find(surf)
+        example = {
+            "before": sent[:i] if i >= 0 else sent,
+            "word": surf if i >= 0 else "",
+            "after": sent[i + len(surf) :] if i >= 0 else "",
+            "translation": o["translation"],
+            "gloss_in_context": o["gloss_in_context"],
+        }
+    d = _lemma_dict({k: row[k] for k in row.keys() if k not in ("due", "stability", "difficulty", "reps", "lapses", "last_review", "n")})
+    d["example"] = example
+    d["new"] = state is None
+    d["reps"] = state["reps"] if state else 0
+    d["labels"] = {str(g): srs.label(state, g, at) for g in (1, 2, 3, 4)}
+    return d
+
+
+def _review_where(lang: str, starred: bool) -> tuple[str, list]:
+    where, args = ["l.status <> 'known'"], []
+    if lang:
+        where.append("l.lang = ?")
+        args.append(lang)
+    if starred:
+        where.append("l.starred = 1")
+    return " AND ".join(where), args
+
+
+@app.get("/api/review")
+def review_queue(lang: str = "", starred: bool = False, new_limit: int = 20, count_only: bool = False) -> dict:
+    at = srs.now()
+    new_limit = min(max(new_limit, 0), 500)
+    w, args = _review_where(lang, starred)
+    cols = "l.*, r.due, r.stability, r.difficulty, r.reps, r.lapses, r.last_review"
+    with db.tx() as c:
+        due_rows = c.execute(
+            f"SELECT {cols} FROM lemmas l JOIN review_state r ON r.lemma_id = l.id "
+            f"WHERE {w} AND r.due <= ? ORDER BY r.due LIMIT 200",
+            (*args, srs.fmt(at)),
+        ).fetchall()
+        due = c.execute(
+            f"SELECT COUNT(*) FROM lemmas l JOIN review_state r ON r.lemma_id = l.id WHERE {w} AND r.due <= ?",
+            (*args, srs.fmt(at)),
+        ).fetchone()[0]
+        log_lang = (" AND lang = ?", [lang]) if lang else ("", [])
+        new_today = c.execute(
+            "SELECT COUNT(*) FROM review_log WHERE was_new = 1 AND date(reviewed_at) = date('now')" + log_lang[0],
+            log_lang[1],
+        ).fetchone()[0]
+        reviewed_today = c.execute(
+            "SELECT COUNT(*) FROM review_log WHERE date(reviewed_at) = date('now')" + log_lang[0], log_lang[1]
+        ).fetchone()[0]
+        new_left = max(0, new_limit - new_today)
+        unseen = f"{w} AND NOT EXISTS (SELECT 1 FROM review_state r WHERE r.lemma_id = l.id)"
+        new_total = c.execute(f"SELECT COUNT(*) FROM lemmas l WHERE {unseen}", args).fetchone()[0]
+        if count_only:
+            return {"due": due, "new_total": new_total, "new_today": new_today, "new_left": new_left,
+                    "reviewed_today": reviewed_today}
+        # Most useful first: lower CEFR level, then words met most often.
+        new_rows = c.execute(
+            f"""SELECT {cols} FROM lemmas l LEFT JOIN review_state r ON r.lemma_id = l.id
+                WHERE {unseen}
+                ORDER BY {_CEFR_RANK}, (SELECT COUNT(*) FROM occurrences o WHERE o.lemma_id = l.id) DESC, l.id
+                LIMIT ?""",
+            (*args, new_left),
+        ).fetchall()
+        later = c.execute(
+            f"SELECT MIN(r.due) FROM lemmas l JOIN review_state r ON r.lemma_id = l.id WHERE {w} AND r.due > ?",
+            (*args, srs.fmt(at)),
+        ).fetchone()[0]
+        cards = [_card(c, r, at) for r in [*due_rows, *new_rows]]
+    return {
+        "cards": cards, "due": due, "new_total": new_total, "new_today": new_today, "new_left": new_left,
+        "reviewed_today": reviewed_today, "next_due": later,
+    }
+
+
+class ReviewReq(BaseModel):
+    rating: int = Field(ge=1, le=4)
+
+
+@app.post("/api/review/{lid}")
+def review_card(lid: int, req: ReviewReq) -> dict:
+    at = srs.now()
+    with db.tx() as c:
+        lemma = c.execute("SELECT * FROM lemmas WHERE id = ?", (lid,)).fetchone()
+        if not lemma:
+            raise HTTPException(404, "Word not found")
+        st = c.execute("SELECT * FROM review_state WHERE lemma_id = ?", (lid,)).fetchone()
+        nxt = srs.schedule(dict(st) if st else None, req.rating, at)
+        c.execute(
+            """INSERT INTO review_state(lemma_id, due, stability, difficulty, reps, lapses, last_review)
+               VALUES(?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(lemma_id) DO UPDATE SET due = excluded.due, stability = excluded.stability,
+                 difficulty = excluded.difficulty, reps = excluded.reps, lapses = excluded.lapses,
+                 last_review = excluded.last_review""",
+            (lid, nxt["due"], nxt["stability"], nxt["difficulty"], nxt["reps"], nxt["lapses"], nxt["last_review"]),
+        )
+        c.execute(
+            "INSERT INTO review_log(lemma_id, lang, rating, was_new, interval_days) VALUES(?, ?, ?, ?, ?)",
+            (lid, lemma["lang"], req.rating, int(st is None), nxt["interval_days"]),
+        )
+        if lemma["status"] == "new":
+            c.execute("UPDATE lemmas SET status = 'learning', updated_at = datetime('now') WHERE id = ?", (lid,))
+        card = None
+        if req.rating == 1:  # comes back in this session
+            row = c.execute(
+                "SELECT l.*, r.due, r.stability, r.difficulty, r.reps, r.lapses, r.last_review "
+                "FROM lemmas l JOIN review_state r ON r.lemma_id = l.id WHERE l.id = ?",
+                (lid,),
+            ).fetchone()
+            card = _card(c, row, srs.parse(nxt["due"]))
+    return {"due": nxt["due"], "interval_days": nxt["interval_days"], "card": card}
 
 
 @app.get("/api/stats")
@@ -668,7 +932,8 @@ def get_languages() -> dict:
 @app.get("/api/models")
 def get_models() -> dict:
     s = settings.load()
-    return {"provider": s["llm_provider"], "default": s["llm_model"], "models": settings.models(s)}
+    return {"provider": s["llm_provider"], "default": s["llm_model"], "models": settings.models(s),
+            "target_language": s["target_language"]}
 
 
 @app.get("/api/usage")
