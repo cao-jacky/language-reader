@@ -169,6 +169,13 @@ def create_text(req: NewText) -> dict:
     title = req.title.strip() or textproc.default_title(body)
     spans = textproc.split_sentences(body)
     with db.tx() as c:
+        # Sending the same text again (a second click in the browser add-on,
+        # a re-paste) opens the copy already in the library.
+        dup = c.execute("SELECT id FROM texts WHERE lang = ? AND body = ? ORDER BY id LIMIT 1", (lang, body)).fetchone()
+        if dup:
+            if req.source_url.strip():
+                c.execute("UPDATE texts SET source_url = COALESCE(source_url, ?) WHERE id = ?", (req.source_url.strip(), dup["id"]))
+            return {"id": dup["id"], "lang": lang, "existing": True}
         cur = c.execute(
             "INSERT INTO texts(lang, title, source_url, body) VALUES(?, ?, ?, ?)",
             (lang, title, req.source_url.strip() or None, body),
@@ -178,7 +185,7 @@ def create_text(req: NewText) -> dict:
             "INSERT INTO sentences(text_id, idx, start, end) VALUES(?, ?, ?, ?)",
             [(tid, i, s, e) for i, (s, e) in enumerate(spans)],
         )
-    return {"id": tid, "lang": lang}
+    return {"id": tid, "lang": lang, "existing": False}
 
 
 @app.get("/api/texts/{tid}")

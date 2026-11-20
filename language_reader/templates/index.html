@@ -624,6 +624,7 @@ function viewNew() {
     submit.disabled = true;
     try {
       const r = await api("/api/texts", { method: "POST", body: { lang, title: title.value, source_url: src.value, body: body.value } });
+      if (r.existing) toast("This text is already in your library");
       location.hash = `#/text/${r.id}`;
     } catch (err) { toast(err.message, "error"); submit.disabled = false; }
   } },
