@@ -200,6 +200,14 @@ button.star.btn { font-size: .88rem; border: 1px solid var(--border); padding: 5
 .w.st-new { background-color: var(--new-bg); }
 .w.st-learning { background-color: var(--learning-bg); }
 .w.st-known { text-decoration: underline 1px var(--known-line); text-underline-offset: 4px; }
+/* "Meanings above": the meaning of each looked-up word written over it, like
+   a correction pencilled above the line. Known words are left bare. */
+.text.glosses .flow, .text.glosses .orig { line-height: 2.85; }
+.text.glosses .w[data-gloss] { position: relative; }
+.text.glosses .w[data-gloss]:not(.st-known)::before {
+  content: attr(data-gloss); position: absolute; left: 50%; bottom: calc(100% - .38em); transform: translateX(-50%);
+  max-width: 11em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: italic 500 .56em/1.15 var(--sans); color: var(--accent); pointer-events: none; }
 .w.ph { --phl: var(--phrase-line); }
 .w.active, .w.active:hover { --hl: color-mix(in srgb, var(--accent) 24%, transparent); }
 /* While dragging, whole words (and the spaces between them) light up instead
@@ -879,7 +887,7 @@ let R = null; // reader state
 async function viewText(id) {
   const t = await api(`/api/texts/${id}`);
   R = {
-    t, parallel: pref.get("parallel") === "1", active: null,
+    t, parallel: pref.get("parallel") === "1", glosses: pref.get("glosses") === "1", active: null,
     occ: new Map(t.occurrences.map((o) => [o.start + ":" + o.end, o])),
     tokens: t.sentences.flatMap((s) => s.tokens),
   };
@@ -888,6 +896,13 @@ async function viewText(id) {
     R.parallel = !R.parallel; pref.set("parallel", R.parallel ? "1" : "0");
     parBtn.classList.toggle("on", R.parallel); renderText();
   } }, "Side by side");
+  const glossBtn = el("button", { class: "btn" + (R.glosses ? " on" : ""), "aria-pressed": String(R.glosses),
+    title: "Write the meaning of each word you've looked up above it", onclick: () => {
+    R.glosses = !R.glosses; pref.set("glosses", R.glosses ? "1" : "0");
+    glossBtn.classList.toggle("on", R.glosses); glossBtn.setAttribute("aria-pressed", String(R.glosses));
+    $("#text")?.classList.toggle("glosses", R.glosses);
+    if (R.glosses && !$("#text .w[data-gloss]:not(.st-known)")) toast("Click words to look them up. Their meanings appear above them.");
+  } }, "Meanings above");
   const delBtn = el("button", { class: "btn danger", onclick: async () => {
     if (!confirm(`Delete “${t.title}”? Saved words and phrases stay in your vocabulary.`)) return;
     await api(`/api/texts/${t.id}`, { method: "DELETE" });
@@ -901,7 +916,7 @@ async function viewText(id) {
         langBadge(t.lang),
         el("h1", { lang: t.lang }, t.title),
         t.source_url ? el("a", { href: t.source_url, target: "_blank", rel: "noopener noreferrer", class: "small" }, "source ↗") : null),
-      el("div", { class: "rh-actions" }, trBtn, parBtn, delBtn)),
+      el("div", { class: "rh-actions" }, trBtn, parBtn, glossBtn, delBtn)),
     el("div", { class: "reader-body" }, article, panel)));
   updateTranslateBtn();
   renderText();
@@ -959,6 +974,7 @@ function renderText() {
   if (!a) return;
   const { body, sentences } = R.t;
   a.classList.toggle("parallel", R.parallel);
+  a.classList.toggle("glosses", R.glosses);
   a.replaceChildren();
   if (R.parallel) {
     for (const s of sentences) {
@@ -994,7 +1010,14 @@ function applyMarks() {
       + (phrases.some((p) => p.kind !== "sentence" && s >= p.start && e <= p.end) ? " ph" : "")
       + (R.active && R.active.s === s && R.active.e === e ? " active" : "");
     w.title = sf ? `${sf.lemma} — ${sf.gloss || ""}` : "";
+    const g = shortGloss((o && o.gloss_in_context) || (sf && sf.gloss));
+    if (g) w.dataset.gloss = g; else delete w.dataset.gloss;
   }
+}
+
+// First meaning only, so it fits over the word: "to walk, stroll; to go out" -> "to walk".
+function shortGloss(g) {
+  return (g || "").split(/[;,(\/]/)[0].trim();
 }
 
 // On phones the card is full screen, so the system Back gesture should close
@@ -1121,7 +1144,7 @@ async function lookupWord(s, e, refresh = false, model = null) {
     const r = await api("/api/lookup", { method: "POST", body: { text_id: tid, start: s, end: e, refresh, model } });
     if (!R || R.t.id !== tid || !R.active || R.active.s !== s || R.active.e !== e) return; // superseded
     const L = r.lemma;
-    R.occ.set(s + ":" + e, { start: s, end: e, lemma_id: L.id, status: L.status, surface });
+    R.occ.set(s + ":" + e, { start: s, end: e, lemma_id: L.id, status: L.status, surface, gloss_in_context: r.analysis?.gloss });
     R.t.surfaces[surface.toLowerCase()] = { lemma_id: L.id, lemma: L.stressed || L.lemma, status: L.status, gloss: L.gloss };
     applyMarks();
     renderWordCard(r);

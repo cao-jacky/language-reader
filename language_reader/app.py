@@ -203,7 +203,7 @@ def get_text(tid: int) -> dict:
         t["occurrences"] = [
             dict(r)
             for r in c.execute(
-                "SELECT o.id, o.lemma_id, o.start, o.end, o.surface, l.status "
+                "SELECT o.id, o.lemma_id, o.start, o.end, o.surface, o.gloss_in_context, l.status "
                 "FROM occurrences o JOIN lemmas l ON l.id = o.lemma_id WHERE o.text_id = ?",
                 (tid,),
             )
