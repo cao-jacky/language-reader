@@ -884,10 +884,28 @@ function chatBox(kind, refId, { textId = null, lang = "" } = {}) {
 // ------------------------------------------------------------------ reader
 let R = null; // reader state
 
+// The server counts positions in characters (code points); JavaScript strings
+// count UTF-16 units, in which most emoji take two. Positions are converted on
+// the way in and out, or every word after an emoji would be shifted by one.
+function offsetCodec(body) {
+  if (!/[\uD800-\uDBFF]/.test(body)) return { in: (n) => n, out: (n) => n };
+  const toUnit = [0], toPoint = new Map([[0, 0]]);
+  let u = 0;
+  for (const ch of body) { u += ch.length; toUnit.push(u); toPoint.set(u, toUnit.length - 1); }
+  return { in: (n) => toUnit[n] ?? n, out: (n) => toPoint.get(n) ?? n };
+}
+const spanIn = (o) => { o.start = R.cp.in(o.start); o.end = R.cp.in(o.end); return o; };
+
 async function viewText(id) {
   const t = await api(`/api/texts/${id}`);
+  const cp = offsetCodec(t.body);
+  for (const sn of t.sentences) {
+    sn.start = cp.in(sn.start); sn.end = cp.in(sn.end);
+    sn.tokens = sn.tokens.map(([a, b]) => [cp.in(a), cp.in(b)]);
+  }
+  for (const o of [...t.occurrences, ...t.phrases]) { o.start = cp.in(o.start); o.end = cp.in(o.end); }
   R = {
-    t, parallel: pref.get("parallel") === "1", glosses: pref.get("glosses") === "1", active: null,
+    t, cp, parallel: pref.get("parallel") === "1", glosses: pref.get("glosses") === "1", active: null,
     occ: new Map(t.occurrences.map((o) => [o.start + ":" + o.end, o])),
     tokens: t.sentences.flatMap((s) => s.tokens),
   };
@@ -1071,7 +1089,7 @@ function starButton(sent, { label = false } = {}) {
         toast("Removed from phrase book");
       } else {
         const r = await api(`/api/texts/${R.t.id}/sentences/${sent.id}/phrase`, { method: "POST" });
-        R.t.phrases = [...R.t.phrases, r].sort((x, y) => x.start - y.start);
+        R.t.phrases = [...R.t.phrases, spanIn(r)].sort((x, y) => x.start - y.start);
         if (sent.translation == null) { sent.translation = r.sentence_translation; updateTranslateBtn(); }
         toast("Saved to phrase book");
       }
@@ -1141,7 +1159,7 @@ async function lookupWord(s, e, refresh = false, model = null) {
   panelShow(el("div", { class: "card" }, el("div", { class: "surface", lang: R.t.lang }, surface), el("div", { class: "spinner" }, model ? `Asking ${modelLabel(model)}…` : "Looking up…")));
   try {
     const tid = R.t.id;
-    const r = await api("/api/lookup", { method: "POST", body: { text_id: tid, start: s, end: e, refresh, model } });
+    const r = await api("/api/lookup", { method: "POST", body: { text_id: tid, start: R.cp.out(s), end: R.cp.out(e), refresh, model } });
     if (!R || R.t.id !== tid || !R.active || R.active.s !== s || R.active.e !== e) return; // superseded
     const L = r.lemma;
     R.occ.set(s + ":" + e, { start: s, end: e, lemma_id: L.id, status: L.status, surface, gloss_in_context: r.analysis?.gloss });
@@ -1397,7 +1415,7 @@ async function translatePhrase(s, e, model = null) {
   const span = R.t.body.slice(s, e);
   panelShow(el("div", { class: "card" }, el("div", { class: "k" }, "Phrase"), el("div", { class: "phrase-src", lang: R.t.lang }, span), el("div", { class: "spinner" }, model ? `Asking ${modelLabel(model)}…` : "Translating…")));
   try {
-    const p = await api("/api/phrases", { method: "POST", body: { text_id: R.t.id, start: s, end: e, model } });
+    const p = spanIn(await api("/api/phrases", { method: "POST", body: { text_id: R.t.id, start: R.cp.out(s), end: R.cp.out(e), model } }));
     R.t.phrases = R.t.phrases.filter((x) => x.id !== p.id).concat(p).sort((a, b) => a.start - b.start);
     applyMarks();
     renderPhraseCard(p);
