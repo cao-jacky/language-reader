@@ -170,6 +170,64 @@ API keys saved on the Settings page are stored in `reader.db` and never returned
 to the browser (only their last four characters). Back up or protect the data
 folder accordingly.
 
+## Firefox add-on
+
+The `extension/` folder is a Firefox add-on for sending text from any page to
+the reader.
+
+- **Right-click a selection** and choose *Send selection to Language Reader*.
+  Right-click anywhere else on a page to send the whole article.
+- **The toolbar button** opens a panel where you can choose between the
+  selection and the whole article, edit the title and text, and pick the
+  language yourself if detection gets it wrong.
+- **<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd>** sends the selection, or the
+  whole article when nothing is selected. Change it under *Manage Extension
+  Shortcuts* on `about:addons`.
+
+The language is detected the same way as on the paste page, and the page
+address is saved as the text's source. Sending the same text twice opens the
+copy already in your library. Article text is extracted with Mozilla's
+[Readability](https://github.com/mozilla/readability), the library behind
+Firefox Reader View.
+
+On first run the add-on opens its settings page. Enter the server address (for
+example `http://homelab:8413`) and the `AUTH_TOKEN` value if you set one, then
+click *Save*. Firefox asks for permission to reach that address; the add-on has
+no other site access and sends text only when you ask, only to that server.
+
+### Installing
+
+**For a quick try**, open `about:debugging#/runtime/this-firefox`, click *Load
+Temporary Add-on…* and choose `extension/manifest.json`. It stays until Firefox
+restarts.
+
+**To keep it installed**, release versions of Firefox need the add-on signed by
+Mozilla. Sign it as *unlisted*: it is signed automatically and for free, but not
+published on addons.mozilla.org. Create API credentials under *Manage API Keys*
+in the [Developer Hub](https://addons.mozilla.org/developers/), then run:
+
+```bash
+npx web-ext sign --source-dir extension --channel unlisted --api-key "$AMO_JWT_ISSUER" --api-secret "$AMO_JWT_SECRET"
+```
+
+Keep the credentials out of the repository. The signed `.xpi` lands in
+`web-ext-artifacts/`; open it in Firefox to install. Bump `version` in
+`extension/manifest.json` before signing again. Firefox Developer Edition and
+Nightly can instead install unsigned add-ons after setting
+`xpinstall.signatures.required` to `false` in `about:config`.
+
+**On Firefox for Android** the toolbar panel (in the add-ons menu) works, but
+there are no right-click menus or keyboard shortcuts.
+
+### Reaching the server
+
+The add-on talks to the server from your browser, so the address must be
+reachable from wherever you browse. On your home network the LAN address is
+enough. Away from home, put the server behind something like Tailscale or a
+reverse proxy with HTTPS, and set `AUTH_TOKEN` so the API isn't open.
+
+Run `npx web-ext lint --source-dir extension` to check the add-on after changes.
+
 ## API
 
 The page is a thin client over a JSON API; interactive docs are at
@@ -190,4 +248,5 @@ The page is a thin client over a JSON API; interactive docs are at
 ## Licence
 
 Piper (`piper-tts`) is licensed under GPL-3.0; it is installed as a dependency
-and runs in the same container. Everything else here is MIT.
+and runs in the same container. The add-on bundles Mozilla's Readability
+(`extension/vendor/Readability.js`, Apache-2.0). Everything else here is MIT.

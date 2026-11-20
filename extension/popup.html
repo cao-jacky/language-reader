@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Send to Language Reader</title>
+<link rel="stylesheet" href="ext.css">
+<style>
+  body { width: 400px; max-width: 100%; padding: 14px 16px 16px; }
+  .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .top h1 { margin: 0; }
+  .count { font-size: .78rem; color: var(--muted); font-weight: 400; }
+  #setup, #main { display: none; }
+  .actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .hint { font-size: .8rem; color: var(--muted); margin-top: 4px; }
+  .hint.warn { color: var(--danger); }
+  @media (max-width: 420px) { body { width: auto; } }
+</style>
+</head>
+<body>
+  <div class="top">
+    <h1><img src="icons/icon.svg" alt="">Send to reader</h1>
+    <a href="#" id="settings" class="small">Settings</a>
+  </div>
+
+  <div id="setup">
+    <p>Enter your Language Reader server's address in the settings first.</p>
+    <button class="btn primary" id="open-settings">Open settings</button>
+  </div>
+
+  <form id="main">
+    <div class="field" style="margin-bottom:12px">
+      <div class="seg" role="group" aria-label="What to send">
+        <button type="button" data-mode="selection">Selection</button>
+        <button type="button" data-mode="article">Whole article</button>
+      </div>
+    </div>
+    <label class="field"><span>Title</span><input type="text" id="title" placeholder="First sentence if left empty"></label>
+    <label class="field"><span>Language</span>
+      <select id="lang"><option value="auto">Detect automatically</option></select>
+      <div class="hint" id="detect" aria-live="polite"></div>
+    </label>
+    <label class="field"><span>Text <span class="count" id="count"></span></span>
+      <textarea id="body" rows="9" placeholder="Nothing found on this page. Paste text here."></textarea></label>
+    <label class="check"><input type="checkbox" id="openAfter"> Open in the reader after sending</label>
+    <div class="actions">
+      <span class="muted small" id="source"></span>
+      <button class="btn primary" type="submit" id="send">Send</button>
+    </div>
+    <div class="status" id="status" role="status"></div>
+  </form>
+<script src="lib.js"></script>
+<script src="popup.js"></script>
+</body>
+</html>
