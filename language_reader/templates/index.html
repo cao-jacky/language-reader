@@ -1033,9 +1033,13 @@ function applyMarks() {
   }
 }
 
-// First meaning only, so it fits over the word: "to walk, stroll; to go out" -> "to walk".
+// First meaning only, so it fits over the word: "to walk, stroll; to go out"
+// -> "to walk". Bracketed asides go ("(is) opened" -> "opened", "in (our)
+// library" -> "in library"); models often write them for Finnish passives
+// and possessive suffixes.
 function shortGloss(g) {
-  return (g || "").split(/[;,(\/]/)[0].trim();
+  const plain = (g || "").replace(/\([^)]*\)|\[[^\]]*\]/g, " ");
+  return plain.split(/[;,]/).map((x) => x.replace(/\s+/g, " ").trim()).find(Boolean) || (g || "").trim();
 }
 
 // On phones the card is full screen, so the system Back gesture should close
