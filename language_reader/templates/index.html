@@ -266,6 +266,7 @@ details.chat[open] > summary::before { transform: rotate(90deg); }
 .p-src { font-family: var(--serif); }
 .p-tr { color: var(--muted); font-size: .88rem; }
 .close-sheet { display: none; }
+.sheet-bar { display: none; }
 
 /* vocab */
 .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
@@ -373,6 +374,18 @@ hr.sep { border: 0; border-top: 1px solid var(--border); margin: 20px 0; }
   .vgrid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
   .vcard { min-height: 76px; padding: 8px 9px; }
   .cards { grid-template-columns: 1fr; }
+}
+/* Phones: an open word or phrase card takes the whole screen, with a Close
+   bar that stays at the top while the card scrolls. */
+@media (max-width: 700px) {
+  .panel.open { top: 0; height: 100vh; height: 100dvh; max-height: none; z-index: 40; border-top: 0; box-shadow: none;
+    padding: 0 12px calc(16px + env(safe-area-inset-bottom)); overscroll-behavior: contain; }
+  .panel.open .sheet-bar { display: flex; position: sticky; top: 0; z-index: 1; justify-content: flex-end;
+    margin: 0 -12px 8px; padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
+    background: var(--bg); border-bottom: 1px solid var(--border); }
+  .sheet-bar .btn { min-height: 40px; padding: 6px 16px; }
+  .panel.open .close-sheet { display: none; }
+  body.card-open { overflow: hidden; }
 }
 </style>
 </head>
@@ -983,17 +996,33 @@ function applyMarks() {
   }
 }
 
+// On phones the card is full screen, so the system Back gesture should close
+// it rather than leave the text: opening it adds a history entry.
+const fullCard = matchMedia("(max-width: 700px)");
+const syncCardOpen = () => document.body.classList.toggle("card-open", fullCard.matches && !!$("#panel.open"));
+fullCard.addEventListener("change", syncCardOpen);
+
 function panelShow(node) {
   const p = $("#panel");
   if (!p) return;
+  if (fullCard.matches && !p.classList.contains("open") && !history.state?.card) history.pushState({ card: true }, "");
   p.classList.add("open");
-  p.replaceChildren(node);
+  const bar = el("div", { class: "sheet-bar" }, el("button", { type: "button", class: "btn", onclick: closeSheet }, "Close"));
+  p.replaceChildren(bar, node);
   p.scrollTop = 0;
+  syncCardOpen();
+}
+
+function dismissCard() {
+  if (!$("#panel.open")) return;
+  R.active = null; applyMarks(); renderPanelIdle();
 }
 
 function closeSheet() {
-  R.active = null; applyMarks(); renderPanelIdle();
+  if (history.state?.card) history.back(); // popstate closes it
+  else dismissCard();
 }
+window.addEventListener("popstate", dismissCard);
 
 const savedSentence = (sent) => R.t.phrases.find((p) => p.kind === "sentence" && p.start === sent.start && p.end === sent.end);
 
@@ -1039,6 +1068,7 @@ function renderPanelIdle() {
   const p = $("#panel");
   if (!p) return;
   p.classList.remove("open");
+  syncCardOpen();
   const help = el("div", { class: "card help" },
     el("h2", {}, "How to read"),
     el("p", {}, "Click a word to see its dictionary form, meaning in context and CEFR level. It is saved to your vocabulary."),
